@@ -1,64 +1,38 @@
 import streamlit as st
-import pandas as pd
 import google.generativeai as genai
 
-# Configurazione Pagina
-st.set_page_config(page_title="Orientatore EFT 2026", page_icon="🎓")
+st.set_page_config(page_title="Diagnostica Didacta", page_icon="🔧")
+st.title("🔧 Strumento di Diagnostica")
 
-# Gestione Password
-if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
+# Recupera la chiave
+api_key = st.secrets.get("GEMINI_API_KEY")
 
-if not st.session_state["password_correct"]:
-    st.title("🔒 Accesso Riservato")
-    pwd = st.text_input("Inserisci il codice:", type="password")
-    if st.button("Accedi"):
-        if pwd == st.secrets["APP_PASSWORD"]:
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("Codice errato")
+if not api_key:
+    st.error("❌ Chiave API non trovata nei Secrets!")
     st.stop()
 
-# Configurazione AI - NOME MODELLO AGGIORNATO
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Usiamo 'gemini-1.5-flash-latest' per massima compatibilità
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-except Exception as e:
-    st.error(f"Errore configurazione: {e}")
-
-# Caricamento Dati
-@st.cache_data
-def load_data():
-    return pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
-
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"Errore CSV: {e}")
-    st.stop()
-
-st.title("🎓 Orientatore EFT 2026")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-
-if prompt := st.chat_input("Chiedimi dei corsi..."):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    genai.configure(api_key=api_key)
+    st.info("Tentativo di connessione a Google...")
     
-    catalogo_testo = df[['ID Percorso', 'Titolo', 'Livello', 'Descrizione']].to_string(index=False)
-    full_prompt = f"Sei un orientatore. Catalogo corsi: {catalogo_testo}\n\nDomanda: {prompt}"
+    # Chiediamo la lista dei modelli disponibili per QUESTA chiave
+    models = list(genai.list_models())
     
-    with st.chat_message("assistant"):
-        try:
-            response = model.generate_content(full_prompt)
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-        except Exception as e:
-            st.error(f"Dettaglio tecnico: {e}")
+    found_models = []
+    for m in models:
+        # Cerchiamo solo i modelli che sanno generare testo
+        if 'generateContent' in m.supported_generation_methods:
+            found_models.append(m.name)
+
+    if found_models:
+        st.success("✅ Connessione Riuscita! Ecco i nomi esatti dei modelli disponibili per te:")
+        # Mostriamo la lista a schermo
+        for model_name in found_models:
+            st.code(model_name)
+        st.write("---")
+        st.write("Copia uno di questi nomi (es. `models/gemini-pro`) e inviamelo qui in chat.")
+    else:
+        st.warning("⚠️ La chiave funziona, ma Google dice che non ci sono modelli disponibili. Il progetto potrebbe essere vuoto o limitato.")
+
+except Exception as e:
+    st.error(f"❌ Errore critico di connessione: {e}")
