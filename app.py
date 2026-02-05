@@ -24,7 +24,7 @@ if not st.session_state["password_correct"]:
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     # Ecco il modello che funziona di sicuro:
-    model = genai.GenerativeModel('models/gemini-2.0-flash')
+   model = genai.GenerativeModel('models/gemini-flash-latest')
 except Exception as e:
     st.error(f"Errore configurazione: {e}")
 
