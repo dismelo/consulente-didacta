@@ -23,8 +23,8 @@ if not st.session_state["password_correct"]:
 # Configurazione AI (Usiamo il modello che abbiamo trovato nella lista!)
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Ecco il modello che funziona di sicuro:
-   model = genai.GenerativeModel('models/gemini-flash-latest')
+    # Usiamo il nome esatto trovato nella tua lista
+    model = genai.GenerativeModel('models/gemini-flash-latest')
 except Exception as e:
     st.error(f"Errore configurazione: {e}")
 
