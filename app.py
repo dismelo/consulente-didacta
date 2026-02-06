@@ -77,10 +77,10 @@ df = load_data()
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # AGGIORNAMENTO: Usiamo il nome esatto visto nella diagnostica
-    model = genai.GenerativeModel('gemini-2.0-flash') 
-except:
-    st.error("Errore API Key Gemini.")
+    # USIAMO IL MODELLO LITE (Piano Free) visto nella tua diagnostica
+    model = genai.GenerativeModel('gemini-2.0-flash-lite')
+except Exception as e:
+    st.error(f"Errore configurazione AI: {e}")
     st.stop()
 
 # --- 5. INTERFACCIA CHAT (SEMPRE VISIBILE) ---
