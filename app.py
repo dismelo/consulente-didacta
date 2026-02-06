@@ -26,7 +26,7 @@ def set_bg(png_file):
 
 set_bg('sfondo_eft.png')
 
-# --- 2. MODALITÀ OSPITE (QR-CODE) ---
+# --- 2. MODALITÀ OSPITE (SCANSIONE QR) ---
 if "report" in st.query_params:
     st.title("📄 Il Tuo Report Personale")
     try:
@@ -34,17 +34,17 @@ if "report" in st.query_params:
         st.info("Ecco il riepilogo dei corsi suggeriti per te.")
         st.markdown(testo)
         
-        def pdf_ospite(txt):
+        def genera_pdf(txt):
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=11)
             pdf.multi_cell(0, 10, txt=txt.encode('latin-1', 'ignore').decode('latin-1'))
             return pdf.output(dest='S').encode('latin-1')
 
-        st.download_button("📥 Scarica Report PDF", data=pdf_ospite(testo), file_name="Mio_Report_EFT.pdf")
+        st.download_button("📥 Scarica Report PDF", data=genera_pdf(testo), file_name="Mio_Report_EFT.pdf")
         st.stop()
     except:
-        st.error("Errore report.")
+        st.error("Errore nel caricamento del report.")
         st.stop()
 
 # --- 3. ACCESSO ADMIN ---
@@ -58,58 +58,57 @@ if "auth" not in st.session_state:
         else: st.error("Password errata")
     st.stop()
 
-# --- 4. CARICAMENTO DATI (CON DATI DI PROVA SE VUOTO) ---
+# --- 4. CARICAMENTO DATI (SICUREZZA ANTICRASH) ---
 @st.cache_data
 def load_data():
     try:
-        df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
+        df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv").dropna(how='all')
         if df.empty: raise ValueError
         return df
     except:
-        # DATI DI EMERGENZA (DEMO)
+        # Se il CSV è vuoto o mancante, carica dati demo per non bloccare l'app
         return pd.DataFrame([
-            {"Titolo": "Corso Demo IA", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"},
-            {"Titolo": "Corso Demo Robotica", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "B1"},
-            {"Titolo": "Corso Demo STEAM", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A2"}
+            {"Titolo": "Corso IA e Didattica", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"},
+            {"Titolo": "Robotica Educativa", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "B1"}
         ])
 
 df = load_data()
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # USIAMO IL MODELLO LITE (Piano Free) visto nella tua diagnostica
-    model = genai.GenerativeModel('gemini-2.0-flash-lite')
+    # MODELLO FUNZIONANTE VERIFICATO DA DIAGNOSTICA
+    model = genai.GenerativeModel('gemini-flash-latest')
 except Exception as e:
-    st.error(f"Errore configurazione AI: {e}")
+    st.error(f"Errore API Key: {e}")
     st.stop()
 
-# --- 5. INTERFACCIA CHAT (SEMPRE VISIBILE) ---
+# --- 5. INTERFACCIA CHAT ---
 if "msgs" not in st.session_state: st.session_state.msgs = []
 if "finito" not in st.session_state: st.session_state.finito = False
 
 st.title("🔍 Consulente Formativo")
 
+# Avviso se siamo in modalità demo
 try:
     pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
 except:
-    st.warning("⚠️ Modalità DEMO (Dati reali non disponibili).")
+    st.warning("⚠️ Modalità DEMO (Dati reali non trovati nel CSV).")
 
 for m in st.session_state.msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
 if not st.session_state.finito:
-    if p := st.chat_input("Cerca..."):
+    if p := st.chat_input("Cerca corsi (es. STEM, IA, Primaria)..."):
         st.session_state.msgs.append({"role": "user", "content": p})
         with st.chat_message("user"): st.markdown(p)
         
-        context = f"Dati corsi: {df.to_string()}. REGOLA: Usa SOLO i link della colonna Link."
+        context = f"Catalogo: {df.to_string(index=False)}. Istruzioni: Suggerisci i corsi e fornisci i link cliccabili."
         try:
-            r = model.generate_content(f"{context}\nDomanda: {p}")
+            r = model.generate_content(f"{context}\n\nDomanda: {p}")
             st.session_state.msgs.append({"role": "assistant", "content": r.text})
             with st.chat_message("assistant"): st.markdown(r.text)
         except Exception as e:
-            # Mostra l'errore in modo più gentile
-            st.error(f"Errore di comunicazione con l'AI: {e}")
+            st.error(f"Errore AI: {e}")
 
     if len(st.session_state.msgs) > 0:
         if st.button("🏁 Genera QR per il Docente"):
@@ -117,13 +116,16 @@ if not st.session_state.finito:
             st.rerun()
 
 else:
-    # --- 6. FASE DI CONSEGNA ---
+    # --- 6. FASE DI CONSEGNA QR ---
     st.success("✅ Consulenza completata")
     
+    # Uniamo solo le risposte dell'assistente per il report
     full_text = "\n\n".join([m["content"] for m in st.session_state.msgs if m["role"] == "assistant"])
+    
+    # Generazione link QR (Tronchiamo se troppo lungo per evitare errori)
     base_url = "https://mimmo-consulente-didacta.streamlit.app/"
     encoded_text = base64.b64encode(full_text.encode('utf-8')).decode('utf-8')
-    qr_url = f"{base_url}?report={encoded_text[:1500]}"
+    qr_url = f"{base_url}?report={encoded_text[:1800]}"
     
     img = qrcode.make(qr_url)
     buf = BytesIO()
@@ -131,9 +133,9 @@ else:
     
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.image(buf.getvalue(), caption="Fai scansionare questo QR")
+        st.image(buf.getvalue(), caption="QR da scansionare")
     with col2:
-        st.info("Il docente può scaricare il PDF sul suo telefono.")
+        st.info("Fai scansionare il codice al docente per trasferire i link sul suo smartphone.")
         if st.button("🔄 Nuova Ricerca"):
             st.session_state.msgs = []
             st.session_state.finito = False
