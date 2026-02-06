@@ -63,10 +63,10 @@ if "auth" not in st.session_state:
 def load_data():
     try:
         df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
-        if df.empty: raise ValueError # Se vuoto, genera errore per andare nell'except
+        if df.empty: raise ValueError
         return df
     except:
-        # DATI DI EMERGENZA (DEMO) per non bloccare l'app
+        # DATI DI EMERGENZA (DEMO)
         return pd.DataFrame([
             {"Titolo": "Corso Demo IA", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"},
             {"Titolo": "Corso Demo Robotica", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "B1"},
@@ -77,7 +77,8 @@ df = load_data()
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # MODIFICA QUI: Usiamo il modello "pro" che è più compatibile
+    model = genai.GenerativeModel('gemini-pro')
 except:
     st.error("Errore API Key Gemini.")
     st.stop()
@@ -88,13 +89,11 @@ if "finito" not in st.session_state: st.session_state.finito = False
 
 st.title("🔍 Consulente Formativo")
 
-# Avviso discreto se siamo in demo, ma NON BLOCCANTE
 try:
     pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
 except:
     st.warning("⚠️ Modalità DEMO (Dati reali non disponibili).")
 
-# Loop Chat
 for m in st.session_state.msgs:
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
@@ -109,7 +108,8 @@ if not st.session_state.finito:
             st.session_state.msgs.append({"role": "assistant", "content": r.text})
             with st.chat_message("assistant"): st.markdown(r.text)
         except Exception as e:
-            st.error(f"Errore AI: {e}")
+            # Mostra l'errore in modo più gentile
+            st.error(f"Errore di comunicazione con l'AI: {e}")
 
     if len(st.session_state.msgs) > 0:
         if st.button("🏁 Genera QR per il Docente"):
