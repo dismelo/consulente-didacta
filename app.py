@@ -5,6 +5,61 @@ import google.generativeai as genai
 # Configurazione Pagina
 st.set_page_config(page_title="Orientatore EFT 2026", page_icon="🎓")
 
+# --- INIZIO BLOCCO CSS PER SFONDO ---
+import base64
+
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+def set_png_as_page_bg(png_file):
+    bin_str = get_base64_of_bin_file(png_file)
+    page_bg_img = '''
+    <style>
+    .stApp {
+        background-image: url("data:image/png;base64,%s");
+        background-size: cover;
+        background-position: center top;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    
+    /* Stile per il contenitore principale della chat */
+    [data-testid="stChatMessageContainer"] {
+        padding-top: 180px; /* Spazio per l'intestazione dorata */
+        padding-bottom: 100px; /* Spazio per i loghi in basso */
+        max-width: 900px; /* Larghezza massima per non toccare i bordi */
+        margin: auto; /* Centra la chat orizzontalmente */
+    }
+
+    /* Stile per il box di input della chat in basso */
+    [data-testid="stChatInput"] {
+        max-width: 900px;
+        margin: auto;
+        padding-bottom: 120px; /* Solleva il box di input sopra i loghi */
+    }
+    
+    /* Nasconde l'header standard di Streamlit e il menu hamburger per pulizia */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    </style>
+    ''' % bin_str
+    st.markdown(page_bg_img, unsafe_allow_html=True)
+
+# Richiama la funzione con il nome del tuo file immagine
+# Assicurati che il file 'sfondo_eft.png' sia caricato su GitHub!
+try:
+    set_png_as_page_bg('sfondo_eft.png')
+except FileNotFoundError:
+    st.warning("⚠️ Immagine di sfondo 'sfondo_eft.png' non trovata. Caricala su GitHub per vederla.")
+
+# --- FINE BLOCCO CSS ---
+
 # Gestione Password
 if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
