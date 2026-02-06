@@ -17,35 +17,37 @@ def set_png_as_page_bg(png_file):
     bin_str = get_base64_of_bin_file(png_file)
     page_bg_img = '''
     <style>
-    .stApp {
+   .stApp {
         background-image: url("data:image/png;base64,%s");
-        background-size: cover;
-        background-position: center top;
+        background-size: 100% 100%; /* Forza l'immagine a stare nei bordi senza tagliarla */
+        background-position: center;
         background-repeat: no-repeat;
         background-attachment: fixed;
     }
     
-    /* Stile per il contenitore principale della chat */
-    [data-testid="stChatMessageContainer"] {
-        padding-top: 180px; /* Spazio per l'intestazione dorata */
-        padding-bottom: 100px; /* Spazio per i loghi in basso */
-        max-width: 900px; /* Larghezza massima per non toccare i bordi */
-        margin: auto; /* Centra la chat orizzontalmente */
+    /* Spingiamo il titolo e la chat più in basso per non coprire l'oro */
+    [data-testid="stVerticalBlock"] > div:first-child {
+        margin-top: 150px; 
     }
 
-    /* Stile per il box di input della chat in basso */
-    [data-testid="stChatInput"] {
-        max-width: 900px;
+    /* Creiamo una zona "protetta" per la chat nello spazio bianco */
+    [data-testid="stChatMessageContainer"] {
+        padding-top: 20px;
+        padding-bottom: 150px; /* Lascia spazio ai loghi in basso */
+        max-width: 800px;
         margin: auto;
-        padding-bottom: 120px; /* Solleva il box di input sopra i loghi */
+    }
+
+    /* Solleviamo il box dove scrivi per non coprire i loghi 'Futura' */
+    [data-testid="stChatInput"] {
+        bottom: 120px !important; /* Alza il box di input */
+        max-width: 800px;
+        margin: auto;
     }
     
-    /* Nasconde l'header standard di Streamlit e il menu hamburger per pulizia */
-    header[data-testid="stHeader"] {
-        visibility: hidden;
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* Pulizia estetica */
+    header[data-testid="stHeader"] { visibility: hidden; }
+    [data-testid="stDecoration"] { display: none; }
     
     </style>
     ''' % bin_str
