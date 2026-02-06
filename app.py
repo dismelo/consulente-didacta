@@ -3,135 +3,127 @@ import google.generativeai as genai
 import pandas as pd
 import base64
 import qrcode
-import json
 from io import BytesIO
 from fpdf import FPDF
 
-# --- 1. CONFIGURAZIONE E SFONDO IMMEDIATO ---
+# --- 1. CONFIGURAZIONE E GRAFICA (Sfondo e distanze dai loghi) ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
 def set_bg(png_file):
-    with open(png_file, 'rb') as f:
-        bin_str = base64.b64encode(f.read()).decode()
-    st.markdown(f'''<style>
-    .stApp {{ 
-        background-image: url("data:image/png;base64,{bin_str}"); 
-        background-size: 100% 100%; 
-        background-attachment: fixed; 
-    }}
-    [data-testid="stVerticalBlock"] {{ padding-top: 80px; padding-bottom: 100px; }}
-    header {{ visibility: hidden; }}
-    footer {{ visibility: hidden; }}
-    </style>''', unsafe_allow_html=True)
+    try:
+        with open(png_file, 'rb') as f:
+            bin_str = base64.b64encode(f.read()).decode()
+        st.markdown(f'''<style>
+        .stApp {{ 
+            background-image: url("data:image/png;base64,{bin_str}"); 
+            background-size: 100% 100%; 
+            background-attachment: fixed; 
+        }}
+        /* Spazio extra sopra e sotto per non coprire i loghi */
+        [data-testid="stVerticalBlock"] {{ padding-top: 100px; padding-bottom: 150px; }}
+        .stChatFloatingInputContainer {{ bottom: 120px; }}
+        header {{ visibility: hidden; }}
+        </style>''', unsafe_allow_html=True)
+    except: pass
 
 set_bg('sfondo_eft.png')
 
-# --- 2. GESTIONE MODALITÀ OSPITE (VIA QR-CODE) ---
-# Se l'URL contiene dati del report, mostriamo solo quelli senza password
+# --- 2. MODALITÀ OSPITE (Per chi scansiona il QR) ---
 query_params = st.query_params
-if "report_data" in query_params:
-    st.title("📄 Il tuo Report Orientamento")
+if "report" in query_params:
+    st.title("📄 Il Tuo Report Personale")
     try:
-        # Decodifichiamo i dati dal QR
-        report_text = base64.b64decode(query_params["report_data"]).decode('utf-8')
-        st.info("Ecco i corsi selezionati per te durante la consulenza allo stand EFT.")
-        st.markdown(report_text)
+        # Decodifica il testo dal link del QR
+        testo_report = base64.b64decode(query_params["report"]).decode('utf-8')
+        st.info("Ecco i risultati della tua consulenza allo stand EFT.")
+        st.markdown(testo_report)
         
-        # Funzione download PDF per l'ospite
-        def guest_pdf(text):
+        def download_ospite(t):
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=11)
-            pdf.multi_cell(0, 10, txt=text.encode('latin-1', 'ignore').decode('latin-1'))
+            pdf.multi_cell(0, 10, txt=t.encode('latin-1', 'ignore').decode('latin-1'))
             return pdf.output(dest='S').encode('latin-1')
-            
-        st.download_button("📥 Salva PDF sul tuo smartphone", data=guest_pdf(report_text), file_name="mio_report_EFT.pdf")
-        st.stop() # Ferma l'app qui per l'ospite
+
+        st.download_button("📥 Scarica Report PDF sul telefono", data=download_ospite(testo_report), file_name="mio_report_EFT.pdf")
+        st.stop()
     except:
-        st.error("Errore nel caricamento del report.")
+        st.error("Link non valido o scaduto.")
 
-# --- 3. ACCESSO ADMIN (CON PASSWORD) ---
-def check_password():
-    if "authenticated" not in st.session_state:
-        st.title("🎓 Orientatore EFT - Stand Didacta")
-        pwd = st.text_input("Password di servizio", type="password")
-        if st.button("Accedi"):
-            if pwd == st.secrets["APP_PASSWORD"]:
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else: st.error("Accesso negato")
-        return False
-    return True
+# --- 3. CONTROLLO PASSWORD (Admin) ---
+if "auth" not in st.session_state:
+    st.title("🔐 Accesso Riservato Stand")
+    pwd = st.text_input("Inserisci password", type="password")
+    if st.button("Entra"):
+        if pwd == st.secrets["APP_PASSWORD"]:
+            st.session_state.auth = True
+            st.rerun()
+        else: st.error("Password errata")
+    st.stop()
 
-if not check_password(): st.stop()
-
-# --- 4. LOGICA CHAT E DATI ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if "finalizzato" not in st.session_state: st.session_state.finalizzato = False
-
+# --- 4. CARICAMENTO DATI (Risolve l'EmptyDataError) ---
 @st.cache_data
-def load_data():
-    return pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
+def get_data():
+    try:
+        data = pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
+        if data.empty: raise ValueError
+        return data
+    except:
+        # Se il file è vuoto o manca, creiamo una riga di esempio per non far crashare l'app
+        return pd.DataFrame([{"Titolo": "Esempio", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"}])
 
-df = load_data()
+df = get_data()
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- 5. INTERFACCIA DI CONSULENZA ---
-st.title("🎓 Consulente Formativo EFT")
+# --- 5. CHAT E LOGICA ---
+if "msgs" not in st.session_state: st.session_state.msgs = []
+if "finito" not in st.session_state: st.session_state.finito = False
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]): st.markdown(msg["content"])
+st.title("🎓 Consulente Didacta 2026")
 
-if not st.session_state.finalizzato:
-    if prompt := st.chat_input("Quali corsi cerchiamo?"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
+for m in st.session_state.msgs:
+    with st.chat_message(m["role"]): st.markdown(m["content"])
+
+if not st.session_state.finito:
+    if p := st.chat_input("Cerca corsi..."):
+        st.session_state.msgs.append({"role": "user", "content": p})
+        with st.chat_message("user"): st.markdown(p)
         
-        # ISTRUZIONI RIGIDE PER L'IA
-        system_instruction = f"""
-        Sei un consulente EFT. Usa QUESTI DATI: {df.to_string()}.
-        REGOLE TASSATIVE:
-        1. Non inventare MAI link. Usa solo l'URL presente nella colonna 'Link' del CSV.
-        2. Per ogni corso elenca: Titolo, Livello DigCompEdu e il Link alla scheda ufficiale.
-        3. Se non trovi nulla, non suggerire siti esterni, ma di consultare Scuola Futura.
-        """
+        # ORDINI RIGIDI ALL'IA: Solo link dal CSV
+        istruzioni = f"Dati: {df.to_string()}. REGOLA: Usa SOLO i link della colonna Link. Non citare siti esterni."
+        r = model.generate_content(f"{istruzioni}\nDomanda: {p}")
         
-        response = model.generate_content(f"{system_instruction}\n\nUtente: {prompt}")
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
-        with st.chat_message("assistant"): st.markdown(response.text)
+        st.session_state.msgs.append({"role": "assistant", "content": r.text})
+        with st.chat_message("assistant"): st.markdown(r.text)
 
-    if len(st.session_state.messages) > 0:
-        if st.button("🏁 Concludi e consegna al Docente"):
-            st.session_state.finalizzato = True
+    if len(st.session_state.msgs) > 0:
+        if st.button("🏁 Genera QR per il Docente"):
+            st.session_state.finito = True
             st.rerun()
-
-# --- 6. SCHERMATA DI CONSEGNA (QR E PDF) ---
 else:
+    # --- 6. SCHERMATA FINALE CON QR E PDF ---
+    report_completo = ""
+    for m in st.session_state.msgs:
+        if m["role"] == "assistant": report_completo += m["content"] + "\n\n"
+
     st.success("### Consulenza Terminata")
-    report_completo = "\n\n".join([m["content"] for m in st.session_state.messages if m["role"] == "assistant"])
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.write("👋 **Messaggio di saluto:**")
-        st.write("Grazie per averci visitato! Tieniti aggiornato sui corsi EFT su Scuola Futura.")
-        
-        if st.button("🔄 Nuova Consulenza"):
-            st.session_state.messages = []
-            st.session_state.finalizzato = False
+        st.info("Fai inquadrare il QR al docente per fargli scaricare il report sul suo telefono.")
+        if st.button("🔄 Nuova Ricerca"):
+            st.session_state.msgs = []
+            st.session_state.finito = False
             st.rerun()
 
     with col2:
-        # Generiamo il QR-Code che contiene il link "Ospite" con i dati del report
-        base_url = "https://mimmo-consulente-didacta.streamlit.app/" # Assicurati sia corretto
-        encoded_report = base64.b64encode(report_completo.encode('utf-8')).decode('utf-8')
-        # QR limitato a circa 2000 caratteri per stabilità
-        qr_link = f"{base_url}?report_data={encoded_report[:1500]}" 
+        # Creiamo il link magico per l'ospite
+        app_url = "https://mimmo-consulente-didacta.streamlit.app/" 
+        payload = base64.b64encode(report_completo.encode('utf-8')).decode('utf-8')
+        qr_url = f"{app_url}?report={payload[:1500]}" # Limite caratteri QR
         
-        img_qr = qrcode.make(qr_link)
+        qr_img = qrcode.make(qr_url)
         buf = BytesIO()
-        img_qr.save(buf, format="PNG")
-        
-        st.write("**📱 Fai scansionare al docente:**")
-        st.image(buf.getvalue(), width=200, caption="Scansiona per il tuo Report")
+        qr_img.save(buf, format="PNG")
+        st.image(buf.getvalue(), width=230, caption="Scansiona il tuo Report")
