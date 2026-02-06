@@ -1,15 +1,12 @@
 import streamlit as st
-import pandas as pd
 import google.generativeai as genai
-
-# Configurazione Pagina
-st.set_page_config(page_title="Orientatore EFT 2026", page_icon="🎓")
-
-# --- INIZIO BLOCCO CSS PER SFONDO ---
+import pandas as pd
 import base64
+from fpdf import FPDF
+from datetime import datetime
 
-# --- INIZIO BLOCCO SFONDO PULITO ---
-import base64
+# 1. CONFIGURAZIONE PAGINA E SFONDO
+st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
 def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
@@ -22,96 +19,91 @@ def set_png_as_page_bg(png_file):
     <style>
     .stApp {
         background-image: url("data:image/png;base64,%s");
-        background-size: 100%% 100%%; 
+        background-size: 100%% 100%%;
         background-position: center;
         background-repeat: no-repeat;
         background-attachment: fixed;
     }
-    
-    [data-testid="stVerticalBlock"] > div:first-child {
-        margin-top: 150px; 
-    }
-
-    [data-testid="stChatMessageContainer"] {
-        padding-bottom: 200px; 
-        max-width: 800px;
-        margin: auto;
-    }
-
-    [data-testid="stChatInput"] {
-        bottom: 115px !important;
-        max-width: 800px;
-        margin: auto;
-    }
-    
-    header[data-testid="stHeader"] { visibility: hidden; }
-    [data-testid="stDecoration"] { display: none; }
+    [data-testid="stVerticalBlock"] > div:first-child { margin-top: 150px; }
+    [data-testid="stChatMessageContainer"] { padding-bottom: 180px; max-width: 800px; margin: auto; }
+    [data-testid="stChatInput"] { bottom: 110px !important; max-width: 800px; margin: auto; }
+    header { visibility: hidden; }
     </style>
     ''' % bin_str
     st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# Attivazione sfondo
 set_png_as_page_bg('sfondo_eft.png')
-# --- FINE BLOCCO SFONDO PULITO ---
 
-# --- FINE BLOCCO CSS ---
-
-# Gestione Password
-if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
-
-if not st.session_state["password_correct"]:
-    st.title("🔒 Accesso Riservato")
-    pwd = st.text_input("Inserisci il codice:", type="password")
-    if st.button("Accedi"):
-        if pwd == st.secrets["APP_PASSWORD"]:
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("Codice errato")
-    st.stop()
-
-# Configurazione AI (Usiamo il modello che abbiamo trovato nella lista!)
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Usiamo il nome esatto trovato nella tua lista
-    model = genai.GenerativeModel('models/gemini-flash-latest')
-except Exception as e:
-    st.error(f"Errore configurazione: {e}")
-
-# Caricamento Dati
-@st.cache_data
-def load_data():
-    # Assicurati che il nome del file CSV su GitHub sia identico a questo:
-    return pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
-
-try:
-    df = load_data()
-except Exception as e:
-    st.error(f"Errore nel caricamento del file CSV: {e}")
-    st.stop()
-
-st.title("🎓 Orientatore EFT 2026")
-
+# 2. INIZIALIZZAZIONE STATO (RESET)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for m in st.session_state.messages:
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
+def reset_chat():
+    st.session_state.messages = []
+    st.rerun()
+
+# 3. CARICAMENTO DATI (DAL CSV AGGIORNATO DALLO SCRAPER)
+@st.cache_data
+def load_data():
+    try:
+        return pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
+    except:
+        return pd.DataFrame(columns=["Titolo", "Sintesi", "Obiettivi", "DigCompEdu_Competenze", "Livello", "Link"])
+
+df_corsi = load_data()
+
+# 4. CONFIGURAZIONE AI
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('models/gemini-flash-latest')
+
+# 5. LOGICA PDF
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Report Orientamento Corsi EFT 2026', 0, 1, 'C')
+        self.ln(5)
+
+def create_pdf(text):
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=11)
+    pdf.multi_cell(0, 10, txt=text)
+    pdf.ln(10)
+    pdf.set_text_color(0, 0, 255)
+    pdf.cell(0, 10, "Consulta i corsi su Scuola Futura", link="https://scuolafutura.pubblica.istruzione.it/", ln=1)
+    return pdf.output(dest='S').encode('latin-1', 'ignore')
+
+# 6. INTERFACCIA CHAT
+st.title("🎓 Orientatore EFT 2026")
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 if prompt := st.chat_input("Chiedimi dei corsi..."):
-    st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    # Preparazione contesto
-    catalogo_testo = df[['ID Percorso', 'Titolo', 'Livello', 'Descrizione']].to_string(index=False)
-    full_prompt = f"Sei un esperto orientatore per docenti. Usa SOLO questo catalogo per rispondere: {catalogo_testo}\n\nDomanda utente: {prompt}"
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Preparazione contesto per l'IA
+    context = f"Dati corsi disponibili: {df_corsi.to_string()}\n\nRispondi includendo Titolo, Sintesi, Obiettivi, Competenze DigCompEdu, Livello e Link cliccabile."
     
     with st.chat_message("assistant"):
-        try:
-            response = model.generate_content(full_prompt)
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-        except Exception as e:
-            st.error(f"Errore generazione: {e}")
+        response = model.generate_content(f"{context}\n\nUtente chiede: {prompt}")
+        full_response = response.text
+        st.markdown(full_response)
+        
+        # Pulsanti Azione
+        col1, col2 = st.columns(2)
+        with col1:
+            pdf_bytes = create_pdf(full_response)
+            st.download_button("📥 Scarica Report PDF", data=pdf_bytes, file_name="consigli_corsi_eft.pdf", mime="application/pdf")
+        with col2:
+            if st.button("🔄 Nuova Ricerca"):
+                reset_chat()
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+# 7. CHIUSURA CORDIALE
+if len(st.session_state.messages) > 1:
+    st.info("Grazie per avermi consultato. Arrivederci e tieniti aggiornato sui corsi delle EFT su [Scuola Futura](https://scuolafutura.pubblica.istruzione.it/).")
