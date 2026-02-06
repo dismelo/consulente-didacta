@@ -119,23 +119,38 @@ else:
     # --- 6. FASE DI CONSEGNA QR ---
     st.success("✅ Consulenza completata")
     
-    # Uniamo solo le risposte dell'assistente per il report
-    full_text = "\n\n".join([m["content"] for m in st.session_state.msgs if m["role"] == "assistant"])
+    # Filtriamo solo le risposte dell'assistente
+    responses = [m["content"] for m in st.session_state.msgs if m["role"] == "assistant"]
+    full_text = "\n\n".join(responses)
     
-    # Generazione link QR (Tronchiamo se troppo lungo per evitare errori)
+    # Per rendere il QR leggibile, inviamo solo gli ultimi suggerimenti (max 800 caratteri)
+    # e ottimizziamo i parametri del QR
+    short_text = full_text[-800:] if len(full_text) > 800 else full_text
+    
     base_url = "https://mimmo-consulente-didacta.streamlit.app/"
-    encoded_text = base64.b64encode(full_text.encode('utf-8')).decode('utf-8')
-    qr_url = f"{base_url}?report={encoded_text[:1800]}"
+    encoded_text = base64.b64encode(short_text.encode('utf-8')).decode('utf-8')
+    qr_url = f"{base_url}?report={encoded_text}"
     
-    img = qrcode.make(qr_url)
+    # Configurazione QR per massima leggibilità
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L, # Riduce la ridondanza per pixel più grandi
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
     buf = BytesIO()
     img.save(buf, format="PNG")
     
-    col1, col2 = st.columns([1, 2])
+    col1, col2 = st.columns([1, 1]) # Distanza maggiore tra le colonne
     with col1:
-        st.image(buf.getvalue(), caption="QR da scansionare")
+        st.image(buf.getvalue(), caption="Punta la fotocamera qui", width=300)
     with col2:
-        st.info("Fai scansionare il codice al docente per trasferire i link sul suo smartphone.")
+        st.write("### 📲 Istruzioni per il docente")
+        st.info("Inquadra il QR per aprire il report sul tuo smartphone. Potrai scaricare l'elenco dei corsi in formato PDF.")
         if st.button("🔄 Nuova Ricerca"):
             st.session_state.msgs = []
             st.session_state.finito = False
