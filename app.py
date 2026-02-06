@@ -8,55 +8,42 @@ st.set_page_config(page_title="Orientatore EFT 2026", page_icon="🎓")
 # --- INIZIO BLOCCO CSS PER SFONDO ---
 import base64
 
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
 def set_png_as_page_bg(png_file):
     bin_str = get_base64_of_bin_file(png_file)
     page_bg_img = '''
     <style>
-   .stApp {
+    .stApp {
         background-image: url("data:image/png;base64,%s");
-        background-size: 100% 100%; /* Forza l'immagine a stare nei bordi senza tagliarla */
+        background-size: 100%% 100%%; 
         background-position: center;
         background-repeat: no-repeat;
         background-attachment: fixed;
     }
     
-    /* Spingiamo il titolo e la chat più in basso per non coprire l'oro */
     [data-testid="stVerticalBlock"] > div:first-child {
         margin-top: 150px; 
     }
 
-    /* Creiamo una zona "protetta" per la chat nello spazio bianco */
     [data-testid="stChatMessageContainer"] {
-        padding-top: 20px;
-        padding-bottom: 150px; /* Lascia spazio ai loghi in basso */
+        padding-bottom: 180px; 
         max-width: 800px;
         margin: auto;
     }
 
-    /* Solleviamo il box dove scrivi per non coprire i loghi 'Futura' */
     [data-testid="stChatInput"] {
-        bottom: 120px !important; /* Alza il box di input */
+        bottom: 110px !important;
         max-width: 800px;
         margin: auto;
     }
     
-    /* Pulizia estetica */
     header[data-testid="stHeader"] { visibility: hidden; }
     [data-testid="stDecoration"] { display: none; }
-    
     </style>
     ''' % bin_str
     st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# Richiama la funzione con il nome del tuo file immagine
-# Assicurati che il file 'sfondo_eft.png' sia caricato su GitHub!
-try:
-    set_png_as_page_bg('sfondo_eft.png')
+# Questa è la riga 59 che attiva tutto
+set_png_as_page_bg('sfondo_eft.png')
 except FileNotFoundError:
     st.warning("⚠️ Immagine di sfondo 'sfondo_eft.png' non trovata. Caricala su GitHub per vederla.")
 
