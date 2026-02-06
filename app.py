@@ -8,6 +8,14 @@ st.set_page_config(page_title="Orientatore EFT 2026", page_icon="🎓")
 # --- INIZIO BLOCCO CSS PER SFONDO ---
 import base64
 
+# --- INIZIO BLOCCO SFONDO PULITO ---
+import base64
+
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
 def set_png_as_page_bg(png_file):
     bin_str = get_base64_of_bin_file(png_file)
     page_bg_img = '''
@@ -25,13 +33,13 @@ def set_png_as_page_bg(png_file):
     }
 
     [data-testid="stChatMessageContainer"] {
-        padding-bottom: 180px; 
+        padding-bottom: 200px; 
         max-width: 800px;
         margin: auto;
     }
 
     [data-testid="stChatInput"] {
-        bottom: 110px !important;
+        bottom: 115px !important;
         max-width: 800px;
         margin: auto;
     }
@@ -42,10 +50,9 @@ def set_png_as_page_bg(png_file):
     ''' % bin_str
     st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# Questa è la riga 59 che attiva tutto
+# Attivazione sfondo
 set_png_as_page_bg('sfondo_eft.png')
-except FileNotFoundError:
-    st.warning("⚠️ Immagine di sfondo 'sfondo_eft.png' non trovata. Caricala su GitHub per vederla.")
+# --- FINE BLOCCO SFONDO PULITO ---
 
 # --- FINE BLOCCO CSS ---
 
