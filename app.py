@@ -77,8 +77,8 @@ df = load_data()
 
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # MODIFICA QUI: Usiamo il modello "pro" che è più compatibile
-    model = genai.GenerativeModel('gemini-pro')
+    # AGGIORNAMENTO: Usiamo il nome esatto visto nella diagnostica
+    model = genai.GenerativeModel('gemini-2.0-flash') 
 except:
     st.error("Errore API Key Gemini.")
     st.stop()
