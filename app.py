@@ -19,24 +19,21 @@ def set_bg(png_file):
             background-size: 100% 100%; 
             background-attachment: fixed; 
         }}
-        /* Spazio extra in alto e in basso per proteggere i loghi */
         [data-testid="stVerticalBlock"] {{ padding-top: 100px; padding-bottom: 120px; }}
         header {{ visibility: hidden; }}
         </style>''', unsafe_allow_html=True)
-    except: pass # Se non trova lo sfondo, pazienza, va avanti lo stesso
+    except: pass
 
 set_bg('sfondo_eft.png')
 
-# --- 2. MODALITÀ OSPITE (Per chi scansiona il QR) ---
+# --- 2. MODALITÀ OSPITE (QR-CODE) ---
 if "report" in st.query_params:
     st.title("📄 Il Tuo Report Personale")
     try:
-        # Recupera il testo dal link
-        testo_report = base64.b64decode(st.query_params["report"]).decode('utf-8')
+        testo = base64.b64decode(st.query_params["report"]).decode('utf-8')
         st.info("Ecco il riepilogo dei corsi suggeriti per te.")
-        st.markdown(testo_report)
+        st.markdown(testo)
         
-        # Generatore PDF al volo per l'ospite
         def pdf_ospite(txt):
             pdf = FPDF()
             pdf.add_page()
@@ -44,16 +41,16 @@ if "report" in st.query_params:
             pdf.multi_cell(0, 10, txt=txt.encode('latin-1', 'ignore').decode('latin-1'))
             return pdf.output(dest='S').encode('latin-1')
 
-        st.download_button("📥 Scarica Report PDF", data=pdf_ospite(testo_report), file_name="Mio_Report_EFT.pdf")
-        st.stop() # Ferma qui l'app per l'ospite
+        st.download_button("📥 Scarica Report PDF", data=pdf_ospite(testo), file_name="Mio_Report_EFT.pdf")
+        st.stop()
     except:
-        st.error("Errore: Impossibile visualizzare il report.")
+        st.error("Errore report.")
         st.stop()
 
-# --- 3. ACCESSO ADMIN (Solo per lo Staff allo stand) ---
+# --- 3. ACCESSO ADMIN ---
 if "auth" not in st.session_state:
     st.title("🎓 Accesso Stand Didacta")
-    pwd = st.text_input("Inserisci Password Staff", type="password")
+    pwd = st.text_input("Password Staff", type="password")
     if st.button("Accedi"):
         if pwd == st.secrets["APP_PASSWORD"]:
             st.session_state.auth = True
@@ -61,82 +58,83 @@ if "auth" not in st.session_state:
         else: st.error("Password errata")
     st.stop()
 
-# --- 4. CARICAMENTO DATI (Senza crashare se vuoto) ---
+# --- 4. CARICAMENTO DATI (CON DATI DI PROVA SE VUOTO) ---
 @st.cache_data
-def get_data():
+def load_data():
     try:
         df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
-        if df.empty: return pd.DataFrame() # Ritorna vuoto ma non crasha
+        if df.empty: raise ValueError # Se vuoto, genera errore per andare nell'except
         return df
     except:
-        return pd.DataFrame() # Ritorna vuoto se il file manca
+        # DATI DI EMERGENZA (DEMO) per non bloccare l'app
+        return pd.DataFrame([
+            {"Titolo": "Corso Demo IA", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"},
+            {"Titolo": "Corso Demo Robotica", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "B1"},
+            {"Titolo": "Corso Demo STEAM", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A2"}
+        ])
 
-df = get_data()
+df = load_data()
 
-# Configurazione AI
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-1.5-flash')
 except:
-    st.error("Errore configurazione AI. Controlla l'API Key.")
+    st.error("Errore API Key Gemini.")
     st.stop()
 
-# --- 5. INTERFACCIA DI RICERCA ---
+# --- 5. INTERFACCIA CHAT (SEMPRE VISIBILE) ---
 if "msgs" not in st.session_state: st.session_state.msgs = []
 if "finito" not in st.session_state: st.session_state.finito = False
 
 st.title("🔍 Consulente Formativo")
 
-# Se il file CSV è vuoto, mostriamo un avviso ma l'app resta viva
-if df.empty:
-    st.warning("⚠️ Attenzione: Il catalogo corsi sembra vuoto. Verifica l'aggiornamento dati su GitHub.")
+# Avviso discreto se siamo in demo, ma NON BLOCCANTE
+try:
+    pd.read_csv("Catalogo_Corsi_EFT_2026.csv")
+except:
+    st.warning("⚠️ Modalità DEMO (Dati reali non disponibili).")
+
+# Loop Chat
+for m in st.session_state.msgs:
+    with st.chat_message(m["role"]): st.markdown(m["content"])
+
+if not st.session_state.finito:
+    if p := st.chat_input("Cerca..."):
+        st.session_state.msgs.append({"role": "user", "content": p})
+        with st.chat_message("user"): st.markdown(p)
+        
+        context = f"Dati corsi: {df.to_string()}. REGOLA: Usa SOLO i link della colonna Link."
+        try:
+            r = model.generate_content(f"{context}\nDomanda: {p}")
+            st.session_state.msgs.append({"role": "assistant", "content": r.text})
+            with st.chat_message("assistant"): st.markdown(r.text)
+        except Exception as e:
+            st.error(f"Errore AI: {e}")
+
+    if len(st.session_state.msgs) > 0:
+        if st.button("🏁 Genera QR per il Docente"):
+            st.session_state.finito = True
+            st.rerun()
+
 else:
-    # Mostra chat
-    for m in st.session_state.msgs:
-        with st.chat_message(m["role"]): st.markdown(m["content"])
-
-    if not st.session_state.finito:
-        if p := st.chat_input("Es: Cerco un corso sull'IA per la primaria..."):
-            st.session_state.msgs.append({"role": "user", "content": p})
-            with st.chat_message("user"): st.markdown(p)
-            
-            # Istruzioni blindate per i link
-            context = f"Dati corsi: {df.to_string()}. REGOLA: Usa SOLO i link presenti nella colonna 'Link'. Non inventare URL."
-            try:
-                r = model.generate_content(f"{context}\nRichiesta utente: {p}")
-                st.session_state.msgs.append({"role": "assistant", "content": r.text})
-                with st.chat_message("assistant"): st.markdown(r.text)
-            except Exception as e:
-                st.error(f"Errore nella risposta dell'AI: {e}")
-
-        if len(st.session_state.msgs) > 0:
-            if st.button("🏁 Genera QR per il Docente"):
-                st.session_state.finito = True
-                st.rerun()
-
-    else:
-        # --- 6. FASE DI CONSEGNA (QR) ---
-        st.success("✅ Consulenza completata")
-        
-        # Creiamo il testo completo per il QR
-        full_text = "\n\n".join([m["content"] for m in st.session_state.msgs if m["role"] == "assistant"])
-        
-        # Link per l'ospite
-        base_url = "https://mimmo-consulente-didacta.streamlit.app/" # Assicurati che sia giusto
-        encoded_text = base64.b64encode(full_text.encode('utf-8')).decode('utf-8')
-        # Limitiamo a 1500 caratteri per evitare QR troppo densi
-        qr_url = f"{base_url}?report={encoded_text[:1500]}"
-        
-        img = qrcode.make(qr_url)
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.image(buf.getvalue(), caption="Fai scansionare questo QR al docente")
-        with col2:
-            st.info("Il docente vedrà il report sul suo telefono e potrà scaricare il PDF, senza bisogno di password.")
-            if st.button("🔄 Nuova Ricerca"):
-                st.session_state.msgs = []
-                st.session_state.finito = False
-                st.rerun()
+    # --- 6. FASE DI CONSEGNA ---
+    st.success("✅ Consulenza completata")
+    
+    full_text = "\n\n".join([m["content"] for m in st.session_state.msgs if m["role"] == "assistant"])
+    base_url = "https://mimmo-consulente-didacta.streamlit.app/"
+    encoded_text = base64.b64encode(full_text.encode('utf-8')).decode('utf-8')
+    qr_url = f"{base_url}?report={encoded_text[:1500]}"
+    
+    img = qrcode.make(qr_url)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.image(buf.getvalue(), caption="Fai scansionare questo QR")
+    with col2:
+        st.info("Il docente può scaricare il PDF sul suo telefono.")
+        if st.button("🔄 Nuova Ricerca"):
+            st.session_state.msgs = []
+            st.session_state.finito = False
+            st.rerun()
