@@ -1,0 +1,28 @@
+name: Aggiornamento Quotidiano Catalogo
+on:
+  schedule:
+    - cron: '0 3 * * *' # Gira ogni notte alle 03:00
+  workflow_dispatch: # Permette di avviarlo a mano per test
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codice
+        uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Installa dipendenze
+        run: |
+          pip install requests beautifulsoup4 pandas
+      - name: Esegui Scraper
+        run: python scraper.py
+      - name: Salva modifiche su GitHub
+        run: |
+          git config --global user.name 'Scraper Bot'
+          git config --global user.email 'bot@noreply.github.com'
+          git add Catalogo_Corsi_EFT_2026.csv
+          git commit -m "Aggiornamento automatico corsi"
+          git push
