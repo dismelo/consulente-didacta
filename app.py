@@ -8,82 +8,36 @@ import os
 from io import BytesIO
 from datetime import datetime
 
-# --- 1. CONFIGURAZIONE E GRAFICA ---
+# --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-def set_bg(png_file):
-    try:
-        with open(png_file, 'rb') as f:
-            bin_str = base64.b64encode(f.read()).decode()
-        st.markdown(f'''<style>
-        .stApp {{ 
-            background-image: url("data:image/png;base64,{bin_str}"); 
-            background-size: cover; 
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-            background-position: center;
-        }}
-        [data-testid="stVerticalBlock"] {{ padding-top: 80px; padding-bottom: 100px; }}
-        header {{ visibility: hidden; }}
-        </style>''', unsafe_allow_html=True)
-    except: pass
-
-set_bg('sfondo_eft.png')
-
-# --- 2. CARICAMENTO E PULIZIA DATI ---
+# Funzione Caricamento Dati con Pulizia Automatica
 @st.cache_data
 def load_data():
     try:
-        # Legge il file ignorando spazi iniziali
-        df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv", skipinitialspace=True)
-        
-        # PULIZIA AGGRESSIVA: Rimuove virgolette e spazi che rompono i link
-        for col in df.columns:
-            df[col] = df[col].astype(str).str.replace('"', '').str.strip()
-        
-        return df
+        if os.path.exists("Catalogo_Corsi_EFT_2026.csv"):
+            # Legge il file ignorando le virgolette sporche
+            df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv", quotechar='"', skipinitialspace=True)
+            # Pulisce ogni cella da eventuali residui di virgolette
+            df = df.apply(lambda x: x.astype(str).str.replace('"', '').str.strip())
+            return df
+        return pd.DataFrame()
     except Exception as e:
-        st.error(f"Errore caricamento database: {e}")
         return pd.DataFrame()
 
-df = load_data()
+df_corsi = load_data()
 
-# --- 3. MODALITÀ OSPITE (QR SCANSIONATO) ---
-if "qrlite" in st.query_params:
-    st.title("📱 I Tuoi Corsi Selezionati")
-    try:
-        dati_raw = base64.b64decode(st.query_params["qrlite"]).decode('utf-8')
-        for riga in dati_raw.split('\n'):
-            if "|" in riga:
-                parti = riga.split('|')
-                if len(parti) >= 3:
-                    st.markdown(f"**ID: {parti[0]}** - {parti[1]}")
-                    st.link_button(f"Vai alla scheda 🔗", parti[2])
-                    st.divider()
-        st.stop()
-    except:
-        st.error("Errore lettura QR.")
-        st.stop()
-
-# --- 4. ACCESSO STAFF E STATO DATI ---
+# --- LOGIN E STATO AGGIORNAMENTO ---
 if "auth" not in st.session_state:
-    st.title("🎓 Accesso Stand Didacta")
-
-    # Controllo data aggiornamento file
+    st.title("🎓 Accesso Orientatore")
+    
+    # Visualizza info file se esiste
     if os.path.exists("Catalogo_Corsi_EFT_2026.csv"):
         mtime = os.path.getmtime("Catalogo_Corsi_EFT_2026.csv")
-        last_upd = datetime.fromtimestamp(mtime).strftime('%d/%m/%Y %H:%M')
-        is_fresh = (datetime.now() - datetime.fromtimestamp(mtime)).days < 1
-        
-        if is_fresh:
-            st.success(f"✅ Il file dati dei corsi è stato aggiornato con successo ({last_upd}).")
-            with open("Catalogo_Corsi_EFT_2026.csv", "rb") as f:
-                st.download_button("📥 Scarica Catalogo Aggiornato (CSV)", f, "Catalogo_EFT.csv", "text/csv")
-        else:
-            st.warning(f"⚠️ L'elenco non è stato aggiornato oggi. Ultimo aggiornamento: ({last_upd}).")
-
-    st.write("---")
-    pwd = st.text_input("Password Staff", type="password")
+        data_str = datetime.fromtimestamp(mtime).strftime('%d/%m/%Y %H:%M')
+        st.info(f"Database corsi aggiornato al: {data_str}")
+    
+    pwd = st.text_input("Password", type="password")
     if st.button("Accedi"):
         if pwd == st.secrets["APP_PASSWORD"]:
             st.session_state.auth = True
@@ -92,75 +46,52 @@ if "auth" not in st.session_state:
             st.error("Password errata")
     st.stop()
 
-# --- 5. INTERFACCIA PRINCIPALE (Dopo il Login) ---
+# --- INTERFACCIA PRINCIPALE ---
+st.title("🔍 Ricerca Percorsi Formativi")
 
-# DEBUG TOOL: Verifica se i link sono puliti
-with st.expander("🛠️ STRUMENTO DEBUG (Verifica Link)"):
-    if not df.empty:
-        st.write("Dati estratti dal CSV (senza virgolette):")
-        st.dataframe(df[["ID", "Titolo", "Link"]].head(3))
-        test_url = df['Link'].iloc[0]
-        st.write(f"Saggio URL: `{test_url}`")
-        st.link_button("PROVA QUESTO LINK", test_url)
+# Strumento Debug per te (visibile solo dopo login)
+with st.expander("🛠️ Controllo Integrità Link"):
+    if not df_corsi.empty:
+        st.write("Esempio Link pulito:", df_corsi['Link'].iloc[0])
+        st.link_button("Test Link 1", df_corsi['Link'].iloc[0])
     else:
-        st.error("Il file CSV sembra vuoto o non leggibile.")
+        st.error("Database non caricato correttamente.")
 
-st.title("🔍 Consulente Formativo")
+# Selezione filtri
+scuola = st.selectbox("Ordine di Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "Tutti"])
+tema = st.selectbox("Area Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Tutti"])
 
-# Configurazione AI
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
-except:
-    st.error("Errore configurazione AI")
-    st.stop()
+if st.button("🔎 Genera Proposta"):
+    if df_corsi.empty:
+        st.error("Catalogo non disponibile.")
+    else:
+        with st.spinner("Analisi in corso..."):
+            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            contesto = df_corsi[['ID', 'Titolo', 'Link']].to_string(index=False)
+            prompt = f"Basandoti su questo catalogo: {contesto}. Trova corsi per {scuola} su {tema}. Per ogni corso scrivi: 1. **[ID: numero] Titolo** - Link: [Vai al corso](URL_CORRETTO)"
+            
+            try:
+                response = model.generate_content(prompt)
+                st.session_state.risultato = response.text
+            except Exception as e:
+                st.error("Errore AI")
 
-col_scuola, col_tema = st.columns(2)
-with col_scuola:
-    scuola = st.selectbox("Livello Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "Tutti"])
-with col_tema:
-    tema = st.selectbox("Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Inclusione", "Tutti"])
-
-if "risultato_ia" not in st.session_state: st.session_state.risultato_ia = None
-
-if st.button("🔎 Cerca nel Catalogo", use_container_width=True):
-    with st.spinner("Analisi database..."):
-        # Passiamo i dati puliti all'IA
-        context = df[["ID", "Titolo", "Link"]].to_string(index=False)
-        prompt = f"""
-        Usa esclusivamente questo catalogo: {context}
-        Cerca corsi per: {scuola}, Tema: {tema}.
-        
-        FORMATO RISPOSTA OBBLIGATORIO:
-        1. **[ID: numero] Titolo Corso**
-        - Abstract: Breve descrizione di 2 righe.
-        - Link: [Apri Scheda Corso](INSERISCI_LINK_ESATTO)
-        
-        Nota: Il link deve essere puro, senza virgolette.
-        """
-        try:
-            res = model.generate_content(prompt)
-            st.session_state.risultato_ia = res.text
-        except Exception as e:
-            st.error(f"Errore AI: {e}")
-
-# --- 6. GENERAZIONE QR CODE ---
-if st.session_state.risultato_ia:
-    st.markdown("---")
-    st.markdown(st.session_state.risultato_ia)
+if "risultato" in st.session_state and st.session_state.risultato:
+    st.markdown(st.session_state.risultato)
     
-    # Estrazione dati per QR
-    qr_payload = ""
-    for line in st.session_state.risultato_ia.split('\n'):
-        if "http" in line:
-            # Estrae ID e Link puliti
-            m_id = re.search(r'ID:\s*(\d+)', line) or re.search(r'\[ID:\s*(\d+)\]', line)
-            m_url = re.search(r'(https?://[^\s\)]+)', line)
-            if m_id and m_url:
-                qr_payload += f"{m_id.group(1)}|Corso|{m_url.group(1)}\n"
+    # Generazione QR semplice
+    qr_data = ""
+    urls = re.findall(r'(https?://[^\s\)]+)', st.session_state.risultato)
+    if urls:
+        # Prende il primo link trovato per il QR
+        qr_url = f"https://mimmo-consulente-didacta.streamlit.app/?link={urls[0]}"
+        img_qr = qrcode.make(qr_url)
+        buf = BytesIO()
+        img_qr.save(buf, format="PNG")
+        st.image(buf.getvalue(), caption="QR Code del primo corso suggerito", width=200)
 
-    if qr_payload:
-        b64 = base64.b64encode(qr_payload.encode()).decode()
-        qr_url = f"https://{st.secrets.get('APP_URL', 'mimmo-consulente-didacta.streamlit.app')}/?qrlite={b64}"
-        
-        qr = qrcode.
+    if st.button("Pulisci"):
+        st.session_state.risultato = None
+        st.rerun()
