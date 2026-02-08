@@ -84,7 +84,7 @@ if st.button("🔎 Genera Proposta Personalizzata", use_container_width=True):
         with st.spinner("L'IA sta analizzando il catalogo reale..."):
             # Configuriamo il modello che hai confermato funzionante
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-flash-latest')
             
             # PROMPT BLINDATO: Ordiniamo all'IA di non inventare nulla
             contesto_csv = df.to_csv(index=False)
