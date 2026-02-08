@@ -5,6 +5,8 @@ import base64
 import qrcode
 import re
 from io import BytesIO
+import os
+from datetime import datetime
 
 # --- 1. CONFIGURAZIONE E GRAFICA ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
@@ -55,18 +57,49 @@ if "qrlite" in st.query_params:
         st.error("Errore lettura QR.")
         st.stop()
 
-# --- 3. LOGIN STAFF ---
+# --- 3. ACCESSO STAFF E CONTROLLO DATI ---
 if "auth" not in st.session_state:
-    st.title("🎓 Accesso Staff")
-    col1, col2 = st.columns([3,1])
-    with col1:
-        pwd = st.text_input("Password", type="password", label_visibility="collapsed", placeholder="Password")
-    with col2:
-        if st.button("Entra"):
-            if pwd == st.secrets["APP_PASSWORD"]:
-                st.session_state.auth = True
-                st.rerun()
-    st.stop()
+    st.title("🎓 Accesso Stand Didacta")
+
+    # --- Logica Controllo Aggiornamento ---
+    def get_file_info(filename):
+        if os.path.exists(filename):
+            mtime = os.path.getmtime(filename)
+            dt_update = datetime.fromtimestamp(mtime)
+            last_update_str = dt_update.strftime('%d/%m/%Y %H:%M')
+            # Controlla se il file è stato aggiornato nelle ultime 24 ore
+            is_fresh = (datetime.now() - dt_update).days < 1
+            return last_update_str, is_fresh
+        return "Mai", False
+
+    last_upd, is_fresh = get_file_info("Catalogo_Corsi_EFT_2026.csv")
+
+    # Visualizzazione messaggi di stato
+    if is_fresh:
+        st.success(f"✅ Il file dati dei corsi è stato aggiornato con successo ({last_upd}).")
+        with open("Catalogo_Corsi_EFT_2026.csv", "rb") as file:
+            st.download_button(
+                label="📥 Scarica Catalogo Aggiornato (CSV)",
+                data=file,
+                file_name="Catalogo_EFT_Aggiornato.csv",
+                mime="text/csv",
+                help="Clicca qui per scaricare la versione più recente del database corsi."
+            )
+    else:
+        st.warning(f"⚠️ L'elenco dei corsi non è stato possibile aggiornarlo. L'app funziona ugualmente e prenderà in esame l'elenco già presente modificato il ({last_upd}).")
+
+    st.write("---") # Una linea di separazione estetica
+
+    # Box per la Password
+    pwd = st.text_input("Password Staff", type="password", placeholder="Inserisci la chiave di accesso")
+    if st.button("Accedi"):
+        if pwd == st.secrets["APP_PASSWORD"]:
+            st.session_state.auth = True
+            st.rerun()
+        else:
+            st.error("Password errata")
+    
+    st.stop() # Blocca il resto dell'app finché non si è loggati
 
 # --- 4. CARICAMENTO DATI (Con ID) ---
 @st.cache_data
