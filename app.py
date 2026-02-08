@@ -10,7 +10,6 @@ from io import BytesIO
 # --- 1. CONFIGURAZIONE E GRAFICA ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-# Funzione per lo sfondo (Ripristinata)
 def set_bg(png_file):
     try:
         with open(png_file, 'rb') as f:
@@ -19,113 +18,111 @@ def set_bg(png_file):
         .stApp {{ 
             background-image: url("data:image/png;base64,{bin_str}"); 
             background-size: cover; 
-            background-repeat: no-repeat;
-            background-attachment: fixed;
             background-position: center;
+            background-attachment: fixed;
         }}
-        [data-testid="stVerticalBlock"] {{ 
-            background: rgba(255, 255, 255, 0.9); 
-            padding: 30px; 
-            border-radius: 20px; 
-            margin-top: 50px;
+        /* Rendiamo i box leggermente trasparenti per leggere il testo sullo sfondo */
+        .st-emotion-cache-1y4p8pa, .st-emotion-cache-10trblm {{
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            border-radius: 15px;
+            padding: 20px;
         }}
         header {{ visibility: hidden; }}
         </style>''', unsafe_allow_html=True)
-    except:
-        pass
+    except: pass
 
 set_bg('sfondo_eft.png')
 
-# --- 2. CARICAMENTO DATI ---
+# --- 2. CARICAMENTO DATI SICURO ---
 @st.cache_data
 def load_data():
-    if not os.path.exists("Catalogo_Corsi_EFT_2026.csv"):
-        return pd.DataFrame()
+    if not os.path.exists("Catalogo_Corsi_EFT_2026.csv"): return pd.DataFrame()
     try:
-        # Pulizia totale per evitare allucinazioni o errori di link
+        # Legge tutto come testo per non perdere zeri iniziali o link strani
         df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv", dtype=str).fillna("")
-        df = df.apply(lambda x: x.str.replace('"', '').str.strip())
+        # Pulizia di sicurezza
+        df = df.apply(lambda x: x.str.strip())
         return df
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 df = load_data()
 
-# --- 3. ACCESSO ---
+# --- 3. LOGIN STAFF ---
 if "auth" not in st.session_state:
     st.title("🎓 Accesso Stand Didacta")
-    pwd = st.text_input("Password Staff", type="password")
+    pwd = st.text_input("Password", type="password")
     if st.button("Entra"):
         if pwd == st.secrets["APP_PASSWORD"]:
             st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("Password errata")
+        else: st.error("Errore")
     st.stop()
 
-# --- 4. INTERFACCIA DI RICERCA ---
+# --- 4. INTERFACCIA PRINCIPALE ---
 st.title("🔍 Consulente Formativo EFT")
 
-# Debug per sicurezza (lo vedi solo tu)
-with st.expander("🛠️ Verifica Database"):
-    st.write(f"Corsi caricati nel sistema: {len(df)}")
-    st.dataframe(df.head(5))
+# DEBUG BOX RIPRISTINATO
+with st.expander("🛠️ Verifica Link CSV (Prova prima di cercare)"):
+    if not df.empty:
+        test_link = df.iloc[0]['Link']
+        st.write(f"Primo link nel database: `{test_link}`")
+        st.link_button("👉 CLICCA QUI PER TESTARE IL PRIMO LINK", test_link)
+    else:
+        st.error("Database vuoto.")
 
 col1, col2 = st.columns(2)
-with col1:
-    scuola = st.selectbox("Ordine Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "Tutti"])
-with col2:
-    tema = st.selectbox("Area Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Inclusione", "Tutti"])
+with col1: scuola = st.selectbox("Ordine Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "Tutti"])
+with col2: tema = st.selectbox("Area Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Inclusione", "Tutti"])
 
-if st.button("🔎 Genera Proposta Personalizzata", use_container_width=True):
-    if df.empty:
-        st.error("Database non trovato!")
+if st.button("🔎 Trova Corsi Reali", use_container_width=True):
+    if df.empty: st.error("Nessun dato disponibile.")
     else:
-        with st.spinner("L'IA sta analizzando il catalogo reale..."):
-            # Configuriamo il modello che hai confermato funzionante
+        with st.spinner("Consultazione catalogo in corso..."):
+            # USIAMO IL MODELLO ESATTO RICHIESTO
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
             model = genai.GenerativeModel('gemini-flash-latest')
             
-            # PROMPT BLINDATO: Ordiniamo all'IA di non inventare nulla
-            contesto_csv = df.to_csv(index=False)
+            # Prompt blindato anti-allucinazioni
+            csv_data = df.to_csv(index=False)
             prompt = f"""
-            ISTRUZIONI RIGIDE: 
-            1. Usa SOLO i corsi elencati qui sotto. 
-            2. Se non trovi corsi per {scuola} e {tema}, dillo chiaramente, NON inventare nomi.
-            3. Per ogni corso trovato scrivi:
-               - **[ID] Titolo**
-               - Link: Copia esattamente il link della colonna Link.
+            Sei un assistente che deve suggerire corsi SOLO dal catalogo fornito.
             
-            DATASET CORSI:
-            {contesto_csv}
+            CATALOGO REALE:
+            {csv_data}
             
-            RICHIESTA UTENTE: Corsi per {scuola} su {tema}.
+            COMPITO:
+            Trova fino a 3 corsi adatti per: Scuola {scuola}, Tema {tema}.
+            
+            REGOLE ASSOLUTE:
+            1. NON INVENTARE CORSI O LINK. Se non trovi nulla, scrivilo.
+            2. Copia il 'Titolo' e il 'Link' ESATTAMENTE come sono nel CSV.
+            3. Usa questo formato per la risposta:
+               ## [ID] Titolo del Corso
+               *Descrizione sintetica basata su titolo e tema.*
+               [VAI ALLA SCHEDA DEL CORSO](Link_esatto_dal_csv)
             """
-            
             try:
                 res = model.generate_content(prompt)
-                st.session_state.risposta = res.text
-            except Exception as e:
-                st.error(f"Errore AI: {e}")
+                st.session_state.risultato = res.text
+            except Exception as e: st.error(f"Errore AI: {e}")
 
-# --- 5. RISULTATI E QR CODE ---
-if "risposta" in st.session_state:
+# --- 5. RISULTATI E QR CODE FUNZIONANTE ---
+if "risultato" in st.session_state:
     st.markdown("---")
-    st.markdown(st.session_state.risposta)
+    st.markdown(st.session_state.risultato)
     
-    # Estrazione link per QR Code
-    links = re.findall(r'(https?://[^\s\)]+)', st.session_state.risposta)
-    if links:
-        st.subheader("📲 Porta i link sul tuo smartphone")
-        # Creiamo un payload per il QR che contiene i link trovati
-        qr_payload = "I TUOI CORSI SELEZIONATI:\n\n" + "\n".join(links)
-        
-        qr = qrcode.make(qr_payload)
+    # Estrae i link reali trovati dall'IA
+    links_trovati = re.findall(r'(https://scuolafutura[^\s\)]+)', st.session_state.risultato)
+    
+    if links_trovati:
+        st.subheader("📱 Scarica i link sul telefono")
+        # Crea un QR code che contiene la lista dei link uno per riga
+        qr_content = "\n".join(links_trovati)
+        img = qrcode.make(qr_content)
         buf = BytesIO()
-        qr.save(buf, format="PNG")
-        st.image(buf.getvalue(), width=250)
-        st.caption("Scansiona per aprire l'elenco dei link direttamente sul telefono.")
+        img.save(buf, format="PNG")
+        st.image(buf.getvalue(), width=250, caption="Inquadra per aprire l'elenco dei link")
 
-if st.button("🗑️ Nuova Ricerca"):
-    st.session_state.risposta = ""
+if st.button("🔄 Ricomincia"):
+    st.session_state.risultato = ""
     st.rerun()
