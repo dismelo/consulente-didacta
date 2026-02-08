@@ -62,7 +62,7 @@ if st.button("🔎 Trova Corsi", use_container_width=True):
     else:
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-flash-latest')
             
             # Prepariamo i dati per l'IA in modo super semplice
             elenco_testo = ""
