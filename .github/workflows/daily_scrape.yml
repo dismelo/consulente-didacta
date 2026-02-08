@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout codice
         uses: actions/checkout@v3
 
       - name: Setup Python
@@ -17,17 +17,18 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install Dependencies
+      - name: Installa dipendenze
         run: |
           pip install requests beautifulsoup4 pandas
 
-      - name: Run Scraper
+      - name: Esegui Scraper
         run: python scraper.py
 
-      - name: Commit and Push
+      - name: Salva modifiche su GitHub
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
+          git config --global user.name 'Scraper Bot'
+          git config --global user.email 'bot@example.com'
           git add Catalogo_Corsi_EFT_2026.csv
-          git commit -m "Auto-update courses" || echo "No changes to commit"
-          git push
+          git pull --rebase origin main
+          git commit -m "Aggiornamento automatico corsi" || echo "Nessuna modifica"
+          git push origin main
