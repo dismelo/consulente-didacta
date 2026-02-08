@@ -4,8 +4,8 @@ import pandas as pd
 import base64
 import qrcode
 import re
-from io import BytesIO
 import os
+from io import BytesIO
 from datetime import datetime
 
 # --- 1. CONFIGURAZIONE E GRAFICA ---
@@ -30,132 +30,113 @@ def set_bg(png_file):
 
 set_bg('sfondo_eft.png')
 
-# --- 2. MODALITÀ OSPITE (QR SCANSIONATO) ---
+# --- 2. CARICAMENTO E PULIZIA DATI ---
+@st.cache_data
+def load_data():
+    try:
+        # Legge il file ignorando spazi iniziali
+        df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv", skipinitialspace=True)
+        
+        # PULIZIA AGGRESSIVA: Rimuove virgolette e spazi che rompono i link
+        for col in df.columns:
+            df[col] = df[col].astype(str).str.replace('"', '').str.strip()
+        
+        return df
+    except Exception as e:
+        st.error(f"Errore caricamento database: {e}")
+        return pd.DataFrame()
+
+df = load_data()
+
+# --- 3. MODALITÀ OSPITE (QR SCANSIONATO) ---
 if "qrlite" in st.query_params:
     st.title("📱 I Tuoi Corsi Selezionati")
     try:
         dati_raw = base64.b64decode(st.query_params["qrlite"]).decode('utf-8')
-        st.info("Ecco i corsi salvati. Clicca per iscriverti.")
-        
-        # Parsing dei dati ID|Titolo|Link
         for riga in dati_raw.split('\n'):
             if "|" in riga:
-                try:
-                    # Formato atteso: ID|Titolo|Link
-                    parti = riga.split('|')
-                    if len(parti) >= 3:
-                        id_corso = parti[0]
-                        titolo = parti[1]
-                        link = parti[2]
-                        
-                        st.markdown(f"**ID: {id_corso}** - {titolo}")
-                        st.link_button(f"Vai al Corso (ID: {id_corso}) 🔗", link)
-                        st.divider()
-                except: pass
+                parti = riga.split('|')
+                if len(parti) >= 3:
+                    st.markdown(f"**ID: {parti[0]}** - {parti[1]}")
+                    st.link_button(f"Vai alla scheda 🔗", parti[2])
+                    st.divider()
         st.stop()
     except:
         st.error("Errore lettura QR.")
         st.stop()
 
-# --- 3. ACCESSO STAFF E CONTROLLO DATI ---
+# --- 4. ACCESSO STAFF E STATO DATI ---
 if "auth" not in st.session_state:
     st.title("🎓 Accesso Stand Didacta")
 
-    # --- Logica Controllo Aggiornamento ---
-    def get_file_info(filename):
-        if os.path.exists(filename):
-            mtime = os.path.getmtime(filename)
-            dt_update = datetime.fromtimestamp(mtime)
-            last_update_str = dt_update.strftime('%d/%m/%Y %H:%M')
-            # Controlla se il file è stato aggiornato nelle ultime 24 ore
-            is_fresh = (datetime.now() - dt_update).days < 1
-            return last_update_str, is_fresh
-        return "Mai", False
+    # Controllo data aggiornamento file
+    if os.path.exists("Catalogo_Corsi_EFT_2026.csv"):
+        mtime = os.path.getmtime("Catalogo_Corsi_EFT_2026.csv")
+        last_upd = datetime.fromtimestamp(mtime).strftime('%d/%m/%Y %H:%M')
+        is_fresh = (datetime.now() - datetime.fromtimestamp(mtime)).days < 1
+        
+        if is_fresh:
+            st.success(f"✅ Il file dati dei corsi è stato aggiornato con successo ({last_upd}).")
+            with open("Catalogo_Corsi_EFT_2026.csv", "rb") as f:
+                st.download_button("📥 Scarica Catalogo Aggiornato (CSV)", f, "Catalogo_EFT.csv", "text/csv")
+        else:
+            st.warning(f"⚠️ L'elenco non è stato aggiornato oggi. Ultimo aggiornamento: ({last_upd}).")
 
-    last_upd, is_fresh = get_file_info("Catalogo_Corsi_EFT_2026.csv")
-
-    # Visualizzazione messaggi di stato
-    if is_fresh:
-        st.success(f"✅ Il file dati dei corsi è stato aggiornato con successo ({last_upd}).")
-        with open("Catalogo_Corsi_EFT_2026.csv", "rb") as file:
-            st.download_button(
-                label="📥 Scarica Catalogo Aggiornato (CSV)",
-                data=file,
-                file_name="Catalogo_EFT_Aggiornato.csv",
-                mime="text/csv",
-                help="Clicca qui per scaricare la versione più recente del database corsi."
-            )
-    else:
-        st.warning(f"⚠️ L'elenco dei corsi non è stato possibile aggiornarlo. L'app funziona ugualmente e prenderà in esame l'elenco già presente modificato il ({last_upd}).")
-
-    st.write("---") # Una linea di separazione estetica
-
-    # Box per la Password
-    pwd = st.text_input("Password Staff", type="password", placeholder="Inserisci la chiave di accesso")
+    st.write("---")
+    pwd = st.text_input("Password Staff", type="password")
     if st.button("Accedi"):
         if pwd == st.secrets["APP_PASSWORD"]:
             st.session_state.auth = True
             st.rerun()
         else:
             st.error("Password errata")
-    
-    st.stop() # Blocca il resto dell'app finché non si è loggati
+    st.stop()
 
-# --- 4. CARICAMENTO DATI (Con ID) ---
-@st.cache_data
-def load_data():
-    try:
-        # Carica il CSV generato dallo scraper
-        df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv").dropna(how='all')
-        # Assicuriamoci che la colonna ID sia stringa
-        if "ID" in df.columns:
-            df["ID"] = df["ID"].astype(str)
-        else:
-            df["ID"] = "N/D" # Fallback se manca colonna
-        return df
-    except:
-        # Fallback estremo se manca il file
-        return pd.DataFrame([
-            {"ID": "12345", "Titolo": "Corso Demo IA", "Link": "https://scuolafutura.pubblica.istruzione.it/", "Livello": "A1"}
-        ])
+# --- 5. INTERFACCIA PRINCIPALE (Dopo il Login) ---
 
-df = load_data()
+# DEBUG TOOL: Verifica se i link sono puliti
+with st.expander("🛠️ STRUMENTO DEBUG (Verifica Link)"):
+    if not df.empty:
+        st.write("Dati estratti dal CSV (senza virgolette):")
+        st.dataframe(df[["ID", "Titolo", "Link"]].head(3))
+        test_url = df['Link'].iloc[0]
+        st.write(f"Saggio URL: `{test_url}`")
+        st.link_button("PROVA QUESTO LINK", test_url)
+    else:
+        st.error("Il file CSV sembra vuoto o non leggibile.")
+
+st.title("🔍 Consulente Formativo")
 
 # Configurazione AI
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-flash-latest')
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except:
-    st.error("Errore Chiave API")
+    st.error("Errore configurazione AI")
     st.stop()
-
-# --- 5. INTERFACCIA RICERCA (DROPDOWN) ---
-if "risultato_ia" not in st.session_state: st.session_state.risultato_ia = None
-
-st.title("🔍 Consulente Formativo")
 
 col_scuola, col_tema = st.columns(2)
 with col_scuola:
-    scuola = st.selectbox("Livello Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "CPIA", "Tutti"])
+    scuola = st.selectbox("Livello Scuola", ["Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "Tutti"])
 with col_tema:
-    tema = st.selectbox("Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Inclusione", "Lingue", "Tutti"])
+    tema = st.selectbox("Tematica", ["Intelligenza Artificiale", "STEM e Robotica", "Metodologie", "Inclusione", "Tutti"])
+
+if "risultato_ia" not in st.session_state: st.session_state.risultato_ia = None
 
 if st.button("🔎 Cerca nel Catalogo", use_container_width=True):
-    with st.spinner("Analisi database corsi..."):
-        # Prompt che include l'ID
-        context = f"Catalogo (Colonne: ID, Titolo, Link): {df.to_string(index=False)}"
+    with st.spinner("Analisi database..."):
+        # Passiamo i dati puliti all'IA
+        context = df[["ID", "Titolo", "Link"]].to_string(index=False)
         prompt = f"""
-        Sei un orientatore esperto. Analizza il catalogo.
-        Utente cerca corsi per: {scuola}, Tema: {tema}.
+        Usa esclusivamente questo catalogo: {context}
+        Cerca corsi per: {scuola}, Tema: {tema}.
         
-        OUTPUT RICHIESTO PER OGNI CORSO (Rispetta rigorosamente questo formato):
+        FORMATO RISPOSTA OBBLIGATORIO:
+        1. **[ID: numero] Titolo Corso**
+        - Abstract: Breve descrizione di 2 righe.
+        - Link: [Apri Scheda Corso](INSERISCI_LINK_ESATTO)
         
-        1. **[ID: INSERISCI_QUI_ID_DAL_CSV] Titolo del Corso**
-        * *Abstract*: (Scrivi una breve descrizione accattivante di 2 righe sul contenuto ipotetico).
-        * *Livello DigCompEdu*: (Stima un livello es: A2, B1).
-        * Link: [Scheda Corso](LINK_ESATTO_DAL_CSV)
-        
-        Usa SOLO i corsi presenti nel CSV. Non inventare ID o Link.
+        Nota: Il link deve essere puro, senza virgolette.
         """
         try:
             res = model.generate_content(prompt)
@@ -163,62 +144,23 @@ if st.button("🔎 Cerca nel Catalogo", use_container_width=True):
         except Exception as e:
             st.error(f"Errore AI: {e}")
 
-# --- 6. REPORT E QR CODE (Con ID) ---
+# --- 6. GENERAZIONE QR CODE ---
 if st.session_state.risultato_ia:
-    st.write("---")
-    st.subheader("💡 Risultati Ricerca")
+    st.markdown("---")
     st.markdown(st.session_state.risultato_ia)
     
-    st.success("✅ Generazione completata")
-    
-    # ESTRAZIONE DATI PER QR (ID | Titolo | Link)
-    lines = st.session_state.risultato_ia.split('\n')
+    # Estrazione dati per QR
     qr_payload = ""
-    current_id = "00000"
-    current_title = "Corso"
-    
-    for line in lines:
-        # Cerca ID e Titolo nella riga 1. **[ID: 123] Titolo**
-        if "**" in line and "ID:" in line:
-            # Pulisce la riga
-            clean_line = line.replace("*", "").replace("1.", "").strip()
-            # Estrae ID tra parentesi quadre
-            match_id = re.search(r'ID:\s*(\d+)', clean_line)
-            if match_id:
-                current_id = match_id.group(1)
-                # Il titolo è quello che resta dopo la parentesi chiusa
-                parts = clean_line.split(']')
-                if len(parts) > 1:
-                    current_title = parts[1].strip()
-        
-        # Cerca Link
+    for line in st.session_state.risultato_ia.split('\n'):
         if "http" in line:
-            match_link = re.search(r'(https?://[^\s\)]+)', line)
-            if match_link:
-                url = match_link.group(1)
-                # Aggiunge al payload: ID|Titolo|Link
-                qr_payload += f"{current_id}|{current_title}|{url}\n"
+            # Estrae ID e Link puliti
+            m_id = re.search(r'ID:\s*(\d+)', line) or re.search(r'\[ID:\s*(\d+)\]', line)
+            m_url = re.search(r'(https?://[^\s\)]+)', line)
+            if m_id and m_url:
+                qr_payload += f"{m_id.group(1)}|Corso|{m_url.group(1)}\n"
 
-    if not qr_payload:
-        qr_payload = "00000|Vai al sito Scuola Futura|https://scuolafutura.pubblica.istruzione.it/"
-
-    # Codifica Base64 per URL QR
-    b64_payload = base64.b64encode(qr_payload.encode('utf-8')).decode('utf-8')
-    qr_url = f"https://mimmo-consulente-didacta.streamlit.app/?qrlite={b64_payload}"
-    
-    # Genera QR
-    qr = qrcode.QRCode(box_size=10, border=2)
-    qr.add_data(qr_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.image(buf.getvalue(), caption="QR con ID Corsi", width=200)
-    with col2:
-        st.info("Inquadra per scaricare la lista con **ID Percorso** e **Link diretti**.")
-        if st.button("🔄 Nuova Ricerca"):
-            st.session_state.risultato_ia = None
-            st.rerun()
+    if qr_payload:
+        b64 = base64.b64encode(qr_payload.encode()).decode()
+        qr_url = f"https://{st.secrets.get('APP_URL', 'mimmo-consulente-didacta.streamlit.app')}/?qrlite={b64}"
+        
+        qr = qrcode.
