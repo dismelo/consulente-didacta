@@ -114,11 +114,11 @@ if "risultato" in st.session_state:
     # Estrae i link reali trovati dall'IA
     links_trovati = re.findall(r'(https://scuolafutura[^\s\)]+)', st.session_state.risultato)
     
-  if links_trovati:
+ if links_trovati:
         st.subheader("📱 Scarica i link sul telefono")
-        # Crea un QR code che contiene la lista dei link uno per riga
         qr_content = "\n".join(links_trovati)
-        img = qrcode.make(qr_content)  # <--- Assicurati che sia scritto così
+        # Assicurati che la riga qui sotto sia esattamente così:
+        img = qrcode.make(qr_content) 
         buf = BytesIO()
         img.save(buf, format="PNG")
         st.image(buf.getvalue(), width=250, caption="Inquadra per aprire l'elenco dei link")
