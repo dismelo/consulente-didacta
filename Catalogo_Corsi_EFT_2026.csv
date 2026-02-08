@@ -1,13 +1,11 @@
-ID,Titolo,Link,Ambito,Ordine Scuola,Tematica,DigCompEdu,Data Scadenza
-428378,Orientamento e Transizione Digitale 4.0,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=428378,Nazionale,Secondaria II grado,Orientamento,"Area 1, 2",15/05/2026
-430500,Il Metaverso nella didattica immersiva,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=430500,EFT Lombardia,Tutti,Realtà Virtuale,"Area 3, 5",20/04/2026
-431200,Podcast e Web Radio per l'inclusione,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=431200,EFT Sicilia,Primaria,Inclusione,Area 5,30/03/2026
-432100,Intelligenza Artificiale Generativa: Prompt Design,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=432100,Nazionale,Secondaria,Intelligenza Artificiale,Area 3,12/06/2026
-433400,Robotica Educativa con LEGO Spike,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=433400,EFT Veneto,Primaria/Media,STEM e Robotica,Area 6,18/04/2026
-434500,Gamification e Game Based Learning,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=434500,EFT Campania,Tutti,Metodologie,"Area 2, 5",05/05/2026
-435600,Cybersecurity: difendersi in rete,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=435600,Nazionale,Secondaria,Cittadinanza Digitale,Area 4,22/05/2026
-436700,Storytelling Digitale con Canva e Genially,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=436700,EFT Puglia,Infanzia/Primaria,Creatività Digitale,Area 2,10/04/2026
-437800,Making e Stampa 3D per la sostenibilità,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=437800,EFT Piemonte,Secondaria,STEM e Robotica,Area 3,15/03/2026
-438900,Google Workspace per la gestione della classe,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=438900,Nazionale,Tutti,Organizzazione,Area 1,28/02/2026
-439100,Coding unplugged per la scuola dell'Infanzia,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=439100,EFT Lazio,Infanzia,Pensiero Computazionale,Area 6,25/03/2026
-440200,Data Literacy: leggere i dati a scuola,https://scuolafutura.pubblica.istruzione.it/it/p/percorso?id=440200,EFT Emilia-Romagna,Secondaria,Dati e Informazioni,Area 4,30/04/2026
+ID,Titolo,Link,Ambito,Ordine Scuola,Tematica
+445566,A scuola con l'Intelligenza Artificiale,https://scuolafutura.pubblica.istruzione.it/a-scuola-con-l-intelligenza-artificiale,Nazionale,Tutti,Intelligenza Artificiale
+445567,Didattica immersiva con AR e VR,https://scuolafutura.pubblica.istruzione.it/didattica-immersiva-con-ar-e-vr,EFT Lombardia,Tutti,STEM e Robotica
+445568,Inclusione digitale e accessibilità,https://scuolafutura.pubblica.istruzione.it/inclusione-digitale-e-accessibilita,EFT Sicilia,Primaria,Inclusione
+445569,Il debate come metodologia didattica,https://scuolafutura.pubblica.istruzione.it/il-debate-come-metodologia-didattica,Nazionale,Secondaria,Metodologie
+445570,Robotica educativa per il primo ciclo,https://scuolafutura.pubblica.istruzione.it/robotica-educativa-per-il-primo-ciclo,EFT Veneto,Primaria,STEM e Robotica
+445571,Valutare le competenze digitali,https://scuolafutura.pubblica.istruzione.it/valutare-le-competenze-digitali,Nazionale,Tutti,Metodologie
+445572,Storytelling e podcasting a scuola,https://scuolafutura.pubblica.istruzione.it/storytelling-e-podcasting-a-scuola,EFT Campania,Tutti,Metodologie
+445573,Cybersecurity per docenti e studenti,https://scuolafutura.pubblica.istruzione.it/cybersecurity-per-docenti-e-studenti,Nazionale,Secondaria,Cittadinanza Digitale
+445574,Creare risorse didattiche aperte (OER),https://scuolafutura.pubblica.istruzione.it/creare-risorse-didattiche-aperte-oer,EFT Puglia,Tutti,Metodologie
+445575,Coding e pensiero computazionale all'infanzia,https://scuolafutura.pubblica.istruzione.it/coding-e-pensiero-computazionale-all-infanzia,EFT Lazio,Infanzia,STEM e Robotica
