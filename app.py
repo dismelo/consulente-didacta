@@ -116,7 +116,7 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
         # Configura Gemini
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-flash-latest')
             
             dati = df.to_csv(index=False)
             
