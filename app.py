@@ -32,22 +32,23 @@ def set_bg_hack(png_file):
             unsafe_allow_html=True
         )
 
-    # Stile CSS per rendere leggibile il testo (Effetto vetro bianco)
+    # Stile CSS "Vetro" e pulizia interfaccia
     st.markdown(
         """
         <style>
-        /* Contenitore principale semitrasparente */
         .stMain .block-container {
-            background-color: rgba(255, 255, 255, 0.92);
+            background-color: rgba(255, 255, 255, 0.95); /* Più opaco per leggibilità */
             padding: 2rem;
             border-radius: 15px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            max-width: 800px;
         }
-        /* Nasconde menu e footer di Streamlit */
+        /* Nasconde elementi standard Streamlit */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
+        
+        /* Forza il colore del testo dei link per leggibilità */
+        a { color: #0068c9 !important; font-weight: bold; }
         </style>
         """,
         unsafe_allow_html=True
@@ -55,8 +56,7 @@ def set_bg_hack(png_file):
 
 set_bg_hack('sfondo_eft.png')
 
-# --- 3. GESTIONE PASSWORD ---
-# Se non impostata nei secrets, usa quella di default
+# --- 3. GESTIONE PASSWORD (FORM PER EVITARE AUTOCOMPLETAMENTO) ---
 PASSWORD_SEGRETA = st.secrets.get("APP_PASSWORD", "didacta2026")
 
 if "auth" not in st.session_state:
@@ -64,13 +64,19 @@ if "auth" not in st.session_state:
 
 if not st.session_state.auth:
     st.title("🔒 Accesso Staff EFT")
-    pwd = st.text_input("Inserisci Password", type="password")
-    if st.button("Entra"):
-        if pwd == PASSWORD_SEGRETA:
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("Password errata")
+    
+    # Usiamo un FORM: evita che il browser riempia automaticamente con la vecchia sessione
+    with st.form("login_form"):
+        # Cambiamo la label e usiamo un key casuale se necessario, ma il form aiuta già molto
+        pwd = st.text_input("Digita il codice di accesso", type="password")
+        submit_button = st.form_submit_button("Entra")
+        
+        if submit_button:
+            if pwd == PASSWORD_SEGRETA:
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("Codice errato.")
     st.stop()
 
 # --- 4. CARICAMENTO DATI ---
@@ -79,7 +85,6 @@ def load_data():
     if not os.path.exists("Catalogo_Corsi_EFT_2026.csv"):
         return pd.DataFrame()
     try:
-        # Carica tutto come testo
         df = pd.read_csv("Catalogo_Corsi_EFT_2026.csv", dtype=str).fillna("")
         return df.apply(lambda x: x.str.strip())
     except:
@@ -91,31 +96,28 @@ df = load_data()
 st.title("🎓 Consulente Formativo EFT")
 
 if df.empty:
-    st.error("⚠️ Il file CSV dei corsi non è stato trovato o è vuoto.")
+    st.error("⚠️ Database corsi non trovato.")
     st.stop()
 
-# Filtri
 col1, col2 = st.columns(2)
 with col1:
     ordine = st.selectbox("Ordine Scuola", ["Tutti", "Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "CPIA"])
 with col2:
-    # Ordina le regioni alfabeticamente
     regioni = ["Tutte"] + sorted(df['Regione'].unique().tolist()) if 'Regione' in df.columns else ["Tutte"]
     regione = st.selectbox("Regione", regioni)
 
-# Tematica
 temi = ["Tutte"] + sorted(df['Tematica'].unique().tolist()) if 'Tematica' in df.columns else ["Tutte"]
 tema = st.selectbox("Area Tematica", temi)
 
-# Input libero
 query = st.text_input("Interessi specifici (es. Podcast, AI, Inclusione)")
 
-# --- 6. PULSANTE CERCA E LOGICA IA ---
+# --- 6. LOGICA IA ---
 if st.button("🔎 Cerca Corsi", use_container_width=True):
-    with st.spinner("Analisi del catalogo in corso..."):
-        # Configura Gemini
+    with st.spinner("Generazione proposta in corso..."):
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+            
+            # IL MODELLO CHE HAI SCELTO
             model = genai.GenerativeModel('gemini-flash-latest')
             
             dati = df.to_csv(index=False)
@@ -125,21 +127,21 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
             {dati}
             
             TROVA 3 CORSI PER:
-            - Scuola: {ordine} (Deduci dal titolo/abstract)
-            - Regione: {regione} (Se non trovi, cerca 'Nazionale')
+            - Scuola: {ordine}
+            - Regione: {regione}
             - Tema: {tema}
             - Extra: {query}
             
+            ISTRUZIONI RIGIDE:
+            1. Usa SOLO i corsi del CSV.
+            2. Se non trovi nulla per la regione {regione}, cerca corsi Nazionali.
+            3. Nella risposta metti ESATTAMENTE i link presenti nella colonna 'Link'.
+            
             FORMATO RISPOSTA (Markdown):
             ### [Titolo]
-            **ID:** [ID]
+            **Target:** [Target dedotto]
             **Perché:** Breve spiegazione.
-            **Competenze:** [Competenze_DigCompEdu]
             🔗 [VAI AL CORSO]([Link])
-            
-            REGOLE:
-            1. Usa SOLO i corsi del CSV.
-            2. Copia i LINK esattamente.
             """
             
             res = model.generate_content(prompt)
@@ -148,12 +150,12 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
         except Exception as e:
             st.error(f"Errore IA: {e}")
 
-# --- 7. RISULTATI, QR CODE E RESET ---
+# --- 7. RISULTATI, QR CODE CORRETTO E RESET ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
     st.markdown(st.session_state.risposta_ia)
     
-    # Estrazione Link per QR Code
+    # Estrazione Link puliti
     links = re.findall(r'(https?://scuolafutura[^\s\)]+)', st.session_state.risposta_ia)
     links_unici = list(dict.fromkeys(links)) # Rimuove duplicati
     
@@ -161,18 +163,28 @@ if "risposta_ia" in st.session_state:
         st.markdown("---")
         st.subheader("📱 Scansiona per iscriverti")
         
-        # QR Code leggero (solo link)
+        # LOGICA QR CODE MIGLIORATA
+        # 1. Contenuto: Solo i link nudi e crudi separati da a capo
         qr_content = "\n".join(links_unici)
-        img = qrcode.make(qr_content)
+        
+        # 2. Creazione QR con sfondo BIANCO (fondamentale per la lettura)
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_content)
+        qr.make(fit=True)
+        
+        # Crea immagine con colori forzati: Nero su Bianco
+        img = qr.make_image(fill_color="black", back_color="white")
         
         buf = BytesIO()
         img.save(buf, format="PNG")
-        st.image(buf.getvalue(), width=200, caption="I link dei corsi sul tuo telefono")
+        st.image(buf.getvalue(), width=250, caption="Inquadra per aprire l'elenco dei link")
     
     st.markdown("---")
-    # PULSANTE RESET
     if st.button("🗑️ Nuova Ricerca (Resetta)", use_container_width=True):
-        # Cancella la risposta dalla memoria
         del st.session_state.risposta_ia
-        # Ricarica la pagina
         st.rerun()
