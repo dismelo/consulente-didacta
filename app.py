@@ -122,7 +122,7 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
             st.stop()
 
         # Modello specificato dall'utente
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-flash-latest')
 
         # Preparazione contesto dati
         # Convertiamo il DF in CSV stringa per passarlo al prompt
