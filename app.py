@@ -150,51 +150,46 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
         except Exception as e:
             st.error(f"Errore IA: {e}")
 
-# --- 7. RISULTATI, QR CODE ELENCO LINK E RESET ---
+# --- 7. RISULTATI, QR CODE "CLICK-READY" E RESET ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
     st.markdown(st.session_state.risposta_ia)
     
-    # Estrazione Link puliti dal report dell'IA
+    # Estrazione Link puliti
     links = re.findall(r'(https?://scuolafutura[^\s\)]+)', st.session_state.risposta_ia)
-    # Rimuove duplicati e pulisce eventuali parentesi tonde finali rimaste incollate
-    links_unici = [l.split(')')[0] for l in list(dict.fromkeys(links))]
+    # Pulizia profonda: rimuove duplicati, spazi e parentesi residue
+    links_unici = [l.strip().split(')')[0].split(']')[0] for l in list(dict.fromkeys(links))]
     
     if links_unici:
         st.markdown("---")
-        st.subheader("📱 I tuoi link selezionati")
-        st.write("Inquadra il QR Code per ricevere l'elenco dei link sul tuo smartphone:")
+        st.subheader("📱 Ricevi i link sul telefono")
         
-        # COSTRUZIONE CONTENUTO QR CODE
-        # Aggiungiamo un'intestazione testuale. Molti smartphone leggono questo 
-        # come un blocco di testo e permettono di cliccare sui singoli link.
-        testo_qr = "CORSI SELEZIONATI PER TE:\n\n" + "\n\n".join(links_unici)
+        # COSTRUZIONE CONTENUTO QR: SOLO URL NUDI
+        # Rimuovendo il testo "CORSI SELEZIONATI", il telefono riconosce i link come azioni
+        qr_content = "\n".join(links_unici)
         
-        # Generazione QR ad alta leggibilità
         qr = qrcode.QRCode(
-            version=None, # Si adatta alla lunghezza del testo
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_L, # Ridotto per diminuire la densità
             box_size=10,
             border=4,
         )
-        qr.add_data(testo_qr)
+        qr.add_data(qr_content)
         qr.make(fit=True)
         
-        # Sfondo bianco obbligatorio per lettura immediata
         img = qr.make_image(fill_color="black", back_color="white")
-        
         buf = BytesIO()
         img.save(buf, format="PNG")
         
-        col_qr, col_info = st.columns([1, 1])
+        col_qr, col_text = st.columns([1, 1])
         with col_qr:
-            st.image(buf.getvalue(), width=280)
-        with col_info:
-            st.info("""
-            **Come funziona:**
-            1. Inquadra con la fotocamera.
-            2. Il telefono riconoscerà un elenco di link.
-            3. Tocca il link del corso che vuoi aprire.
+            st.image(buf.getvalue(), width=250)
+        with col_text:
+            st.success("✅ **QR Code generato!**")
+            st.write("""
+            **Istruzioni per l'utente:**
+            - Inquadra il codice.
+            - Tocca i link che appaiono sullo schermo del telefono per aprire le schede dei corsi.
             """)
     
     st.markdown("---")
