@@ -150,41 +150,55 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
         except Exception as e:
             st.error(f"Errore IA: {e}")
 
-# --- 7. RISULTATI, QR CODE CORRETTO E RESET ---
+# --- 7. RISULTATI, QR CODE ELENCO LINK E RESET ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
     st.markdown(st.session_state.risposta_ia)
     
-    # Estrazione Link puliti
+    # Estrazione Link puliti dal report dell'IA
     links = re.findall(r'(https?://scuolafutura[^\s\)]+)', st.session_state.risposta_ia)
-    links_unici = list(dict.fromkeys(links)) # Rimuove duplicati
+    # Rimuove duplicati e pulisce eventuali parentesi tonde finali rimaste incollate
+    links_unici = [l.split(')')[0] for l in list(dict.fromkeys(links))]
     
     if links_unici:
         st.markdown("---")
-        st.subheader("📱 Scansiona per iscriverti")
+        st.subheader("📱 I tuoi link selezionati")
+        st.write("Inquadra il QR Code per ricevere l'elenco dei link sul tuo smartphone:")
         
-        # LOGICA QR CODE MIGLIORATA
-        # 1. Contenuto: Solo i link nudi e crudi separati da a capo
-        qr_content = "\n".join(links_unici)
+        # COSTRUZIONE CONTENUTO QR CODE
+        # Aggiungiamo un'intestazione testuale. Molti smartphone leggono questo 
+        # come un blocco di testo e permettono di cliccare sui singoli link.
+        testo_qr = "CORSI SELEZIONATI PER TE:\n\n" + "\n\n".join(links_unici)
         
-        # 2. Creazione QR con sfondo BIANCO (fondamentale per la lettura)
+        # Generazione QR ad alta leggibilità
         qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            version=None, # Si adatta alla lunghezza del testo
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
             box_size=10,
             border=4,
         )
-        qr.add_data(qr_content)
+        qr.add_data(testo_qr)
         qr.make(fit=True)
         
-        # Crea immagine con colori forzati: Nero su Bianco
+        # Sfondo bianco obbligatorio per lettura immediata
         img = qr.make_image(fill_color="black", back_color="white")
         
         buf = BytesIO()
         img.save(buf, format="PNG")
-        st.image(buf.getvalue(), width=250, caption="Inquadra per aprire l'elenco dei link")
+        
+        col_qr, col_info = st.columns([1, 1])
+        with col_qr:
+            st.image(buf.getvalue(), width=280)
+        with col_info:
+            st.info("""
+            **Come funziona:**
+            1. Inquadra con la fotocamera.
+            2. Il telefono riconoscerà un elenco di link.
+            3. Tocca il link del corso che vuoi aprire.
+            """)
     
     st.markdown("---")
     if st.button("🗑️ Nuova Ricerca (Resetta)", use_container_width=True):
-        del st.session_state.risposta_ia
+        if "risposta_ia" in st.session_state:
+            del st.session_state.risposta_ia
         st.rerun()
