@@ -51,7 +51,7 @@ query_libera = st.text_input("Ricerca per parole chiave (es: coding, inclusione,
 if st.button("🔎 Trova i corsi adatti", use_container_width=True):
     with st.spinner("L'IA sta leggendo i titoli e gli abstract per te..."):
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-flash-latest')
         
         contesto = df.to_csv(index=False)
         
