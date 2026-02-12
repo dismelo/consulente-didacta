@@ -2,8 +2,8 @@ name: Aggiornamento Quotidiano Catalogo
 
 on:
   schedule:
-    - cron: '0 3 * * *'
-  workflow_dispatch:
+    - cron: '0 3 * * *' # Gira ogni notte alle 3:00
+  workflow_dispatch: # Ti permette di avviarlo a mano per testare
 
 jobs:
   build:
@@ -29,6 +29,7 @@ jobs:
           git config --global user.name 'Scraper Bot'
           git config --global user.email 'bot@example.com'
           git add Catalogo_Corsi_EFT_2026.csv
+          # Questo comando risolve l'errore 'rejected' che hai visto negli screenshot
           git pull --rebase origin main
-          git commit -m "Aggiornamento automatico corsi" || echo "Nessuna modifica"
+          git commit -m "Aggiornamento automatico corsi" || echo "Nessuna modifica da salvare"
           git push origin main
