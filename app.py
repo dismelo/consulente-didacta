@@ -1,17 +1,15 @@
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
-import base64
 import qrcode
 import re
 import os
 from io import BytesIO
 
-# --- 1. CONFIGURAZIONE ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-# --- 2. GESTIONE DATABASE (Percorso Robusto) ---
-# Questo comando trova la cartella esatta dove si trova app.py
+# --- 2. GESTIONE DATABASE ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(current_dir, "Catalogo_Corsi_EFT_2026.csv")
 
@@ -20,77 +18,118 @@ def load_data():
     if not os.path.exists(csv_path):
         return pd.DataFrame()
     try:
-        # Carichiamo il file forzando la codifica utf-8
-        df = pd.read_csv(csv_path, dtype=str).fillna("")
+        # Caricamento con separatore punto e virgola come nel file B
+        df = pd.read_csv(csv_path, sep=';', dtype=str).fillna("")
         return df.apply(lambda x: x.str.strip())
-    except:
+    except Exception as e:
+        st.error(f"Errore nella lettura del file: {e}")
         return pd.DataFrame()
 
 df = load_data()
 
-# --- 3. PASSWORD (NO AUTOCOMPLETE) ---
+# --- 3. ACCESSO (PASSWORD) ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
 if not st.session_state.auth:
     st.title("🔒 Accesso Riservato")
-    # Usiamo un widget vuoto per 'spezzare' la memoria del browser
     with st.form("login"):
-        # Cambiando la label e non mettendo il valore di default, il browser è meno propenso a riempirlo
-        user_pwd = st.text_input("Inserisci il codice per questa sessione", type="password", help="Inserisci la password per iniziare")
-        if st.form_submit_button("Sblocca Sistema"):
+        user_pwd = st.text_input("Inserisci la password", type="password")
+        if st.form_submit_button("Sblocca"):
             if user_pwd == st.secrets.get("APP_PASSWORD", "didacta2026"):
                 st.session_state.auth = True
                 st.rerun()
             else:
-                st.error("Accesso negato.")
+                st.error("Password errata.")
     st.stop()
 
-# --- 4. INTERFACCIA ---
+# --- 4. INTERFACCIA UTENTE ---
 st.title("🎓 Consulente Formativo EFT")
 
-# Se il database è vuoto o non trovato, mostriamo un messaggio utile
 if df.empty:
-    st.warning(f"⚠️ File '{os.path.basename(csv_path)}' non trovato nel repository o vuoto. Verifica il caricamento su GitHub.")
+    st.warning("⚠️ Database corsi non trovato o vuoto. Carica il file CSV su GitHub.")
     st.stop()
 
-# --- 5. LOGICA IA (Modello Corretto) ---
-# (I filtri rimangono uguali a prima...)
-ordine = st.selectbox("Ordine Scuola", ["Tutti", "Infanzia", "Primaria", "Secondaria I grado", "Secondaria II grado", "CPIA"])
-regione = st.selectbox("Regione", ["Tutte"] + sorted(df['Regione'].unique().tolist()))
+st.info("Benvenuto! Seleziona i tuoi interessi per trovare i corsi più adatti su Scuola Futura.")
+
+# --- 5. FILTRI ---
+col1, col2 = st.columns(2)
+
+with col1:
+    # Mappatura su colonna 'Ordine_scuola' del file B
+    opzioni_scuola = ["Tutti"] + sorted(list(set([opt.strip() for val in df['Ordine_scuola'].unique() for opt in val.split(',')])))
+    ordine = st.selectbox("Ordine Scuola", opzioni_scuola)
+
+with col2:
+    regione = st.selectbox("Regione", ["Tutte"] + sorted(df['Regione'].unique().tolist()))
+
 tema = st.selectbox("Area Tematica", ["Tutte"] + sorted(df['Tematica'].unique().tolist()))
-query = st.text_input("Interessi specifici")
+query = st.text_input("Cosa stai cercando? (es. intelligenza artificiale, inclusione...)")
 
-if st.button("🔎 Cerca Corsi", use_container_width=True):
-    with st.spinner("Analisi in corso con Gemini..."):
-        try:
-            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            # MODELLO CORRETTO COME RICHIESTO
-            model = genai.GenerativeModel('gemini-flash-latest')
-            
-            prompt = f"Analizza questi corsi CSV: {df.to_csv(index=False)} e trova 3 corsi per {ordine}, regione {regione} e tema {tema}. Inserisci solo i link nudi per il QR code finale."
-            
-            res = model.generate_content(prompt)
-            st.session_state.risposta_ia = res.text
-        except Exception as e:
-            st.error(f"Errore: {e}")
+# --- 6. LOGICA DI RICERCA CON GEMINI ---
+if st.button("🔎 Trova i miei corsi", use_container_width=True):
+    # Filtraggio preliminare per non mandare troppi dati all'IA
+    df_filtrato = df.copy()
+    if ordine != "Tutti":
+        df_filtrato = df_filtrato[df_filtrato['Ordine_scuola'].str.contains(ordine, case=False)]
+    if regione != "Tutte":
+        df_filtrato = df_filtrato[df_filtrato['Regione'] == regione]
+    if tema != "Tutte":
+        df_filtrato = df_filtrato[df_filtrato['Tematica'] == tema]
 
-# --- 6. RISULTATI E QR CODE (CLICKABLE) ---
+    if df_filtrato.empty:
+        st.error("Nessun corso trovato con questi filtri. Prova a cercarne altri!")
+    else:
+        with st.spinner("L'intelligenza artificiale sta analizzando i corsi per te..."):
+            try:
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                model = genai.GenerativeModel('gemini-flash-latest')
+                
+                # Prepariamo i dati per il prompt (prime 15 righe filtrate per brevità)
+                context_csv = df_filtrato.head(15).to_csv(index=False)
+                
+                prompt = f"""
+                Agisci come un consulente esperto di Scuola Futura. 
+                In base a questa richiesta: '{query}' per la scuola '{ordine}',
+                analizza i seguenti corsi:
+                {context_csv}
+                
+                Seleziona i 3 corsi migliori e scrivi un breve report.
+                Per ogni corso DEVI includere il link esatto che trovi nella colonna 'Link_scheda'.
+                Alla fine, elenca solo i link nudi (uno per riga) per il QR code.
+                """
+                
+                res = model.generate_content(prompt)
+                st.session_state.risposta_ia = res.text
+            except Exception as e:
+                st.error(f"Errore durante l'analisi: {e}")
+
+# --- 7. RISULTATI E QR CODE ---
 if "risposta_ia" in st.session_state:
+    st.markdown("---")
     st.markdown(st.session_state.risposta_ia)
     
-    links = re.findall(r'(https?://scuolafutura[^\s\)]+)', st.session_state.risposta_ia)
-    links_unici = [l.strip().split(')')[0].split(']')[0] for l in list(dict.fromkeys(links))]
+    # Estrazione link per il QR Code (usa la colonna Link_scheda del file B)
+    links = re.findall(r'(https?://scuolafutura[^\s\)\],]+)', st.session_state.risposta_ia)
+    links_unici = list(dict.fromkeys(links))
     
     if links_unici:
+        st.subheader("📱 Porta i link sul tuo smartphone")
         qr_content = "\n".join(links_unici)
+        
         qr = qrcode.QRCode(box_size=10, border=4)
         qr.add_data(qr_content)
+        qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
         
         buf = BytesIO()
         img.save(buf, format="PNG")
-        st.image(buf.getvalue(), width=250, caption="Scansiona per i link diretti")
+        
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.image(buf.getvalue(), width=250)
+        with c2:
+            st.success("Scansiona il QR code per aprire le schede dei corsi selezionati!")
 
     if st.button("🗑️ Nuova Ricerca"):
         del st.session_state.risposta_ia
