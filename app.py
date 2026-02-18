@@ -9,7 +9,7 @@ from io import BytesIO
 # --- 1. CONFIGURAZIONE ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-# --- 2. CARICAMENTO E PULIZIA PROFONDA DATI ---
+# --- 2. CARICAMENTO E PULIZIA DATI ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(current_dir, "Catalogo_Corsi_EFT_2026.csv")
 
@@ -18,25 +18,26 @@ def load_data():
     if not os.path.exists(csv_path):
         return pd.DataFrame()
     try:
-        df = pd.read_csv(csv_path, sep=';', dtype=str).fillna("")
-        # PULIZIA: Rimuove spazi vuoti e ritorni a capo da tutte le colonne
-        for col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+        df = pd.read_csv(csv_path, sep=';', dtype=str, on_bad_lines='skip')
+        # Pulizia standard colonne
+        cols_to_fix = ['Ordine_scuola', 'Regione', 'Tematica', 'Titolo_corso', 'Abstract', 'Link_scheda']
+        for col in cols_to_fix:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(r'[\r\n\t]+', ' ', regex=True).str.strip().fillna("")
         return df
     except Exception as e:
         return pd.DataFrame()
 
 df = load_data()
 
-# --- 3. PASSWORD (FIX AUTOCOMPLETAMENTO) ---
+# --- 3. PASSWORD ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
 if not st.session_state.auth:
     st.title("🔒 Accesso Riservato")
     with st.form("login"):
-        # Cambiato il parametro 'key' per forzare il browser a dimenticare la cronologia
-        user_pwd = st.text_input("Inserisci la Password di sblocco", type="password", key="pwd_segreta_26")
+        user_pwd = st.text_input("Password", type="password", key="pwd_search_fix")
         if st.form_submit_button("Sblocca"):
             if user_pwd == st.secrets.get("APP_PASSWORD", "didacta2026"):
                 st.session_state.auth = True
@@ -48,104 +49,100 @@ if not st.session_state.auth:
 # --- 4. INTERFACCIA E FILTRI ---
 st.title("🎓 Consulente Formativo EFT")
 
-if df.empty:
-    st.warning("⚠️ Database non trovato o vuoto.")
-    st.stop()
-
 col1, col2 = st.columns(2)
 with col1:
     set_ordini = set()
     for val in df['Ordine_scuola'].unique():
-        for s in val.split(','):
-            set_ordini.add(s.strip())
+        for s in str(val).split(','):
+            if s.strip(): set_ordini.add(s.strip())
     ordine = st.selectbox("Ordine Scuola", ["Tutti"] + sorted(list(set_ordini)))
 
 with col2:
     regione = st.selectbox("Regione", ["Tutte"] + sorted(df['Regione'].unique().tolist()))
 
 tema = st.selectbox("Area Tematica", ["Tutte"] + sorted(df['Tematica'].unique().tolist()))
-query = st.text_input("Di cosa vorresti occuparti?")
+query_utente = st.text_input("Di cosa vorresti occuparti? (es: storytelling, coding, inclusione)")
 
-# --- 5. RICERCA E PROMPT ---
-if st.button("🔎 Cerca Corsi", use_container_width=True):
+# --- 5. MOTORE DI RICERCA TESTUALE + IA ---
+if st.button("🔎 Trova i corsi migliori", use_container_width=True):
     
-    # FILTRO ELASTICO (Risolve il problema Campania e spazi vuoti)
+    # A. Filtro geografico/scolastico (Base)
     mask = pd.Series([True] * len(df))
     if ordine != "Tutti":
         mask &= df['Ordine_scuola'].str.contains(ordine, case=False, regex=False)
     if regione != "Tutte":
-        mask &= df['Regione'].str.contains(regione, case=False, regex=False)
+        mask &= df['Regione'] == regione
     if tema != "Tutte":
-        mask &= df['Tematica'].str.contains(tema, case=False, regex=False)
+        mask &= df['Tematica'] == tema
     
-    df_preview = df[mask].head(15)
-    
-    if df_preview.empty:
-        st.error("Nessun corso trovato con questi filtri. Prova a cercarne altri!")
+    df_filtrato = df[mask].copy()
+
+    # B. Ricerca Rilevanza (Il "cuore" della tua richiesta)
+    if query_utente.strip() != "":
+        # Creiamo un punteggio: +2 se la parola è nel titolo, +1 se è nell'abstract
+        parole_chiave = query_utente.lower().split()
+        
+        def calcola_punteggio(row):
+            punti = 0
+            testo_completo = (row['Titolo_corso'] + " " + row['Abstract']).lower()
+            for parola in parole_chiave:
+                if parola in row['Titolo_corso'].lower(): punti += 5 # Molto importante nel titolo
+                if parola in row['Abstract'].lower(): punti += 2     # Importante nell'abstract
+            return punti
+
+        df_filtrato['score'] = df_filtrato.apply(calcola_punteggio, axis=1)
+        # Ordiniamo per punteggio e prendiamo i migliori 10
+        df_per_ia = df_filtrato.sort_values(by='score', ascending=False).head(10)
     else:
-        with st.spinner(f"Analizzando {len(df_preview)} corsi trovati..."):
+        df_per_ia = df_filtrato.head(10)
+
+    # C. Analisi con Gemini
+    if df_per_ia.empty or (query_utente != "" and df_per_ia['score'].max() == 0):
+        st.error("Non ho trovato corsi che corrispondano specificamente alla tua ricerca. Prova a usare parole diverse.")
+    else:
+        with st.spinner("Sto selezionando i corsi più pertinenti dal catalogo..."):
             try:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-flash-latest')
                 
-                prompt = f"""
-                Analizza questi corsi e seleziona i 3 migliori per: {query}.
-                DATI: {df_preview[['Titolo_corso', 'Link_scheda', 'Abstract']].to_csv(index=False)}
+                contesto = df_per_ia[['Titolo_corso', 'Link_scheda', 'Abstract']].to_csv(index=False)
                 
+                prompt = f"""
+                L'utente cerca corsi su: "{query_utente}".
+                Analizza questi dati (già filtrati per pertinenza):
+                {contesto}
+                
+                Scegli i 3 migliori in assoluto per soddisfare la richiesta dell'utente.
                 REGOLE:
-                1. Scrivi un report descrivendo brevemente perché hai scelto ciascun corso.
-                2. Alla fine, vai a capo e scrivi ESATTAMENTE questa stringa: 'TAG_SEGRETO_LINK:'
-                3. Sotto la stringa, elenca i link esatti dei 3 corsi scelti, uno per riga, senza aggiungere altro testo, punti o virgole.
+                1. Spiega in 2 righe perché il corso è perfetto per la sua richiesta.
+                2. Alla fine scrivi 'TAG_SEGRETO_LINK:' e sotto i link esatti, uno per riga.
                 """
                 
                 res = model.generate_content(prompt)
                 st.session_state.risposta_ia = res.text
             except Exception as e:
-                st.error(f"Errore IA: {e}")
+                st.error(f"Errore: {e}")
 
-# --- 6. RISULTATI: DISPLAY E MULTI-QR CODE ---
+# --- 6. RISULTATI E QR CODE (MULTI-QR FIX) ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
+    parti = st.session_state.risposta_ia.split("TAG_SEGRETO_LINK:")
+    st.markdown(parti[0])
     
-    # Separiamo il testo descrittivo dalla zona dei link (così l'utente non vede i link spiattellati)
-    parti_risposta = st.session_state.risposta_ia.split("TAG_SEGRETO_LINK:")
-    testo_descrittivo = parti_risposta[0]
-    st.markdown(testo_descrittivo)
-    
-    # Se la IA ha generato correttamente la seconda parte (i link)
-    if len(parti_risposta) > 1:
-        testo_link = parti_risposta[1]
-        
-        # Estrazione pulita
-        raw_links = re.findall(r'(https?://scuolafutura[^\s\)\>\]\'\"]+)', testo_link)
-        clean_links = []
-        for l in raw_links:
-            pulito = l.strip(".,;!*()[]{}'\"")
-            if pulito not in clean_links:
-                clean_links.append(pulito)
-
-        # Generazione di UN QR CODE PER OGNI CORSO
-        if clean_links:
-            st.subheader("📱 Accedi alle schede dei corsi")
-            
-            # Creiamo tante colonne quanti sono i link trovati (massimo 3)
-            colonne_qr = st.columns(len(clean_links))
-            
-            for i, link in enumerate(clean_links):
-                with colonne_qr[i]:
-                    # Mostra un link cliccabile pulito
-                    st.markdown(f"**[🔗 Apri Corso {i+1}]({link})**")
-                    
-                    # Genera e mostra il QR Code singolo
-                    qr = qrcode.QRCode(box_size=6, border=2)
-                    qr.add_data(link)
-                    qr.make(fit=True)
-                    img = qr.make_image(fill_color="black", back_color="white")
-                    
+    if len(parti) > 1:
+        links = re.findall(r'(https?://scuolafutura[^\s\)\>\]\'\"]+)', parti[1])
+        if links:
+            st.subheader("📱 Schede dei Corsi")
+            cols = st.columns(len(links))
+            for i, l in enumerate(links[:3]): # Max 3 QR
+                with cols[i]:
+                    clean_l = l.strip(".,;!*")
+                    st.markdown(f"**[Corso {i+1}]({clean_l})**")
+                    qr = qrcode.make(clean_l)
                     buf = BytesIO()
-                    img.save(buf, format="PNG")
+                    qr.save(buf, format="PNG")
                     st.image(buf.getvalue(), use_container_width=True)
 
-    if st.button("🗑️ Nuova Ricerca"):
+    if st.button("Nuova Ricerca"):
         del st.session_state.risposta_ia
         st.rerun()
