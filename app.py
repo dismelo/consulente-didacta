@@ -6,10 +6,10 @@ import re
 import os
 from io import BytesIO
 
-# --- 1. CONFIGURAZIONE ---
-st.set_page_config(page_title="Orientatore EFT 2026", layout="wide")
+# --- 1. CONFIGURAZIONE (Layout centrato per una migliore leggibilità) ---
+st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-# --- 2. CARICAMENTO E PULIZIA "TANK-PROOF" ---
+# --- 2. CARICAMENTO DATI "INTELLIGENTE" (Excel o CSV) ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(current_dir, "Catalogo_Corsi_EFT_2026.csv")
 
@@ -18,19 +18,25 @@ def load_data():
     if not os.path.exists(csv_path):
         return pd.DataFrame()
     try:
-        # Caricamento con gestione encoding per file Excel/CSV
-        df = pd.read_csv(csv_path, sep=';', dtype=str, on_bad_lines='skip', encoding='utf-8-sig')
+        # Tenta prima come CSV (separatore punto e virgola)
+        try:
+            df = pd.read_csv(csv_path, sep=';', dtype=str, encoding='utf-8-sig')
+            # Se ha letto una sola colonna, forse è un formato Excel vero
+            if df.shape[1] <= 1: raise Exception("Formato non riconosciuto")
+        except:
+            # Se fallisce, tenta come Excel (perché il file potrebbe essere un .xlsx rinominato)
+            df = pd.read_excel(csv_path, dtype=str)
         
-        # Sostituisce i valori nulli (NaN) con stringhe vuote PRIMA della pulizia
+        # Pulizia rigorosa: rimuove NaN, spazi bianchi e "nan" testuali
         df = df.fillna("")
-        
-        # PULIZIA ESTREMA: Rimuove spazi, tabulazioni e ritorni a capo da OGNI cella
         for col in df.columns:
-            df[col] = df[col].astype(str).apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+            df[col] = df[col].astype(str).str.replace(r'[\r\n\t]+', ' ', regex=True).str.strip()
+            # Se la cella contiene la parola "nan" (comune in Excel), la svuota
+            df[col] = df[col].apply(lambda x: "" if x.lower() == "nan" else x)
         
         return df
     except Exception as e:
-        st.error(f"Errore tecnico nel database: {e}")
+        st.error(f"Errore critico: il file non è leggibile. Assicurati che sia un CSV (punto e virgola) o un Excel valido. {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -42,7 +48,7 @@ if "auth" not in st.session_state:
 if not st.session_state.auth:
     st.title("🔒 Accesso Riservato")
     with st.form("login"):
-        user_pwd = st.text_input("Inserisci Password", type="password", key="pwd_v4_final")
+        user_pwd = st.text_input("Inserisci la Password", type="password", key="pwd_fixed_v5")
         if st.form_submit_button("Sblocca"):
             if user_pwd == st.secrets.get("APP_PASSWORD", "didacta2026"):
                 st.session_state.auth = True
@@ -54,7 +60,7 @@ if not st.session_state.auth:
 # --- 4. INTERFACCIA E FILTRI ---
 st.title("🎓 Consulente Formativo EFT 2026")
 
-# Menu Ordine Scuola richiesto
+# Liste personalizzate basate sulla tua richiesta
 opzioni_scuola = [
     "Tutti", 
     "Scuola dell'infanzia", 
@@ -64,103 +70,87 @@ opzioni_scuola = [
     "CPIA"
 ]
 
-col1, col2, col3 = st.columns(3)
-
+col1, col2 = st.columns(2)
 with col1:
     ordine = st.selectbox("Ordine Scuola", opzioni_scuola)
-
 with col2:
-    # Genera lista regioni pulita (senza nan o vuoti)
-    lista_regioni = sorted([r for r in df['Regione'].unique() if r and r.lower() != 'nan'])
-    regione = st.selectbox("Regione", ["Tutte"] + lista_regioni)
+    regioni = sorted([r for r in df['Regione'].unique() if r])
+    regione = st.selectbox("Regione", ["Tutte"] + regioni)
 
-with col3:
-    # Genera lista tematiche pulita
-    lista_temi = sorted([t for t in df['Tematica'].unique() if t and t.lower() != 'nan'])
-    tema = st.selectbox("Area Tematica", ["Tutte"] + lista_temi)
+tematiche = sorted([t for t in df['Tematica'].unique() if t])
+tema = st.selectbox("Area Tematica", ["Tutte"] + tematiche)
 
-query_utente = st.text_input("Di cosa vorresti occuparti? (Cerca per parole chiave come: AI, inclusione, STEAM, coding...)")
+query_utente = st.text_input("Cosa cerchi? (es: IA per inclusione, coding, realtà aumentata...)")
 
-# --- 5. LOGICA DI FILTRAGGIO E RANKING ---
-if st.button("🔎 Avvia Ricerca", use_container_width=True):
+# --- 5. RICERCA E RANKING (Titolo e Abstract pari merito) ---
+if st.button("🔎 Cerca Corsi", use_container_width=True):
     
-    # A. Filtraggio per Regione e Tema (Case-insensitive per sicurezza)
+    # Filtri di base
     mask = pd.Series([True] * len(df))
-    
-    if regione != "Tutte":
-        mask &= df['Regione'].str.lower() == regione.lower()
-        
-    if tema != "Tutte":
-        mask &= df['Tematica'].str.lower() == tema.lower()
-    
-    # B. Filtraggio per Ordine di Scuola (deve essere CONTENUTO nella scheda)
     if ordine != "Tutti":
         mask &= df['Ordine_scuola'].str.contains(ordine, case=False, regex=False)
+    if regione != "Tutte":
+        mask &= df['Regione'] == regione
+    if tema != "Tutte":
+        mask &= df['Tematica'] == tema
     
     df_filtrato = df[mask].copy()
 
-    # C. Motore di Punteggio Equilibrato (Titolo e Abstract pesano uguale)
-    if query_utente.strip() != "" and not df_filtrato.empty:
-        parole = query_utente.lower().split()
-        def calcola_punteggio(row):
-            # Uniamo i campi per dare pari dignità alla ricerca
-            testo_analisi = (row['Titolo_corso'] + " " + row['Abstract']).lower()
-            punti = 0
-            for p in parole:
-                # Conta le occorrenze totali delle parole chiave
-                punti += testo_analisi.count(p)
-            return punti
-
-        df_filtrato['score'] = df_filtrato.apply(calcola_punteggio, axis=1)
-        df_per_ia = df_filtrato.sort_values(by='score', ascending=False).head(12)
+    if df_filtrato.empty:
+        st.warning(f"Nessun corso trovato in {regione} per {ordine}. Prova ad allargare i filtri.")
     else:
-        df_per_ia = df_filtrato.head(12)
+        # Calcolo punteggio: titolo e abstract hanno lo stesso valore
+        if query_utente.strip():
+            parole = query_utente.lower().split()
+            def score(row):
+                testo = (row['Titolo_corso'] + " " + row['Abstract']).lower()
+                return sum(testo.count(p) for p in parole)
+            
+            df_filtrato['score'] = df_filtrato.apply(score, axis=1)
+            df_risultati = df_filtrato.sort_values(by='score', ascending=False).head(10)
+        else:
+            df_risultati = df_filtrato.head(10)
 
-    # --- 6. GENERAZIONE RISPOSTA ---
-    if df_per_ia.empty:
-        st.error(f"Nessun corso trovato per {regione} - {ordine}. Prova a rimuovere i filtri o a cambiare parole chiave.")
-    else:
-        with st.spinner("Sto preparando i tuoi consigli personalizzati..."):
+        # --- 6. INTELLIGENZA ARTIFICIALE ---
+        with st.spinner("Analisi in corso..."):
             try:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-flash-latest')
-                
-                contesto = df_per_ia[['Titolo_corso', 'Link_scheda', 'Abstract']].to_csv(index=False)
+                contesto = df_risultati[['Titolo_corso', 'Link_scheda', 'Abstract']].to_csv(index=False)
                 
                 prompt = f"""
-                Richiesta: "{query_utente}" per {ordine}.
-                Dati disponibili:
-                {contesto}
-                
-                Scegli i 3 corsi migliori. Per ognuno scrivi un breve motivo.
-                Alla fine scrivi 'LINK_LIST:' e sotto i link esatti, uno per riga.
+                L'utente cerca: "{query_utente}" per {ordine}.
+                Dati corsi: {contesto}
+                Scegli i 3 più attinenti e spiega perché in 2 righe.
+                Formatta così: scrivi il report, poi 'TAG_LINK:' e i link uno per riga.
                 """
-                
                 res = model.generate_content(prompt)
                 st.session_state.risposta_ia = res.text
             except Exception as e:
-                st.error(f"Errore nell'analisi IA: {e}")
+                st.error(f"Errore IA: {e}")
 
-# --- 7. RISULTATI E QR CODE ---
+# --- 7. RISULTATI E QR CODE (DIMENSIONI CONTROLLATE) ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
-    parti = st.session_state.risposta_ia.split("LINK_LIST:")
+    parti = st.session_state.risposta_ia.split("TAG_LINK:")
     st.markdown(parti[0])
     
     if len(parti) > 1:
         links = re.findall(r'(https?://scuolafutura[^\s\)\>\]]+)', parti[1])
         if links:
-            st.subheader("📱 Inquadra per i dettagli")
-            cols = st.columns(len(links[:3]))
-            for i, l in enumerate(links[:3]):
-                with cols[i]:
-                    l_pulito = l.strip(".,;!")
-                    st.markdown(f"**[Vai alla Scheda {i+1} 🔗]({l_pulito})**")
+            st.subheader("📱 QR Code per iscrizione")
+            # Usiamo colonne per i QR Code
+            q_cols = st.columns(len(links[:3]))
+            for i, link in enumerate(links[:3]):
+                with q_cols[i]:
+                    l_pulito = link.strip(".,;!")
+                    st.markdown(f"**[LINK CORSO {i+1}]({l_pulito})**")
                     qr = qrcode.make(l_pulito)
                     buf = BytesIO()
                     qr.save(buf, format="PNG")
-                    st.image(buf.getvalue(), use_container_width=True)
+                    # Larghezza fissa a 200 per evitare QR code giganti
+                    st.image(buf.getvalue(), width=200)
 
-    if st.button("🗑️ Reset"):
+    if st.button("🗑️ Nuova Ricerca"):
         del st.session_state.risposta_ia
         st.rerun()
