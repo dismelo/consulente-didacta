@@ -9,7 +9,7 @@ from io import BytesIO
 # --- 1. CONFIGURAZIONE ---
 st.set_page_config(page_title="Orientatore EFT 2026", layout="centered")
 
-# --- 2. CARICAMENTO DATI (FILE B) ---
+# --- 2. CARICAMENTO E PULIZIA PROFONDA DATI ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 csv_path = os.path.join(current_dir, "Catalogo_Corsi_EFT_2026.csv")
 
@@ -18,22 +18,25 @@ def load_data():
     if not os.path.exists(csv_path):
         return pd.DataFrame()
     try:
-        # File B usa il punto e virgola come separatore
         df = pd.read_csv(csv_path, sep=';', dtype=str).fillna("")
-        return df.apply(lambda x: x.str.strip())
+        # PULIZIA: Rimuove spazi vuoti e ritorni a capo da tutte le colonne
+        for col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+        return df
     except Exception as e:
         return pd.DataFrame()
 
 df = load_data()
 
-# --- 3. PASSWORD ---
+# --- 3. PASSWORD (FIX AUTOCOMPLETAMENTO) ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
 if not st.session_state.auth:
     st.title("🔒 Accesso Riservato")
     with st.form("login"):
-        user_pwd = st.text_input("Password", type="password")
+        # Cambiato il parametro 'key' per forzare il browser a dimenticare la cronologia
+        user_pwd = st.text_input("Inserisci la Password di sblocco", type="password", key="pwd_segreta_26")
         if st.form_submit_button("Sblocca"):
             if user_pwd == st.secrets.get("APP_PASSWORD", "didacta2026"):
                 st.session_state.auth = True
@@ -42,17 +45,15 @@ if not st.session_state.auth:
                 st.error("Password errata.")
     st.stop()
 
-# --- 4. INTERFACCIA ---
+# --- 4. INTERFACCIA E FILTRI ---
 st.title("🎓 Consulente Formativo EFT")
 
 if df.empty:
-    st.warning("⚠️ Database non trovato. Carica il file B rinominato su GitHub.")
+    st.warning("⚠️ Database non trovato o vuoto.")
     st.stop()
 
-# Filtri basati sulle colonne del File B
 col1, col2 = st.columns(2)
 with col1:
-    # Gestione ordini multipli (es. "Infanzia, Primaria")
     set_ordini = set()
     for val in df['Ordine_scuola'].unique():
         for s in val.split(','):
@@ -67,34 +68,34 @@ query = st.text_input("Di cosa vorresti occuparti?")
 
 # --- 5. RICERCA E PROMPT ---
 if st.button("🔎 Cerca Corsi", use_container_width=True):
-    # Filtro rapido per passare all'IA solo i dati pertinenti
+    
+    # FILTRO ELASTICO (Risolve il problema Campania e spazi vuoti)
     mask = pd.Series([True] * len(df))
     if ordine != "Tutti":
-        mask &= df['Ordine_scuola'].str.contains(ordine, case=False)
+        mask &= df['Ordine_scuola'].str.contains(ordine, case=False, regex=False)
     if regione != "Tutte":
-        mask &= df['Regione'] == regione
+        mask &= df['Regione'].str.contains(regione, case=False, regex=False)
     if tema != "Tutte":
-        mask &= df['Tematica'] == tema
+        mask &= df['Tematica'].str.contains(tema, case=False, regex=False)
     
-    df_preview = df[mask].head(10)
+    df_preview = df[mask].head(15)
     
     if df_preview.empty:
-        st.error("Nessun corso trovato. Prova a cambiare filtri.")
+        st.error("Nessun corso trovato con questi filtri. Prova a cercarne altri!")
     else:
-        with st.spinner("L'IA sta preparando il tuo percorso..."):
+        with st.spinner(f"Analizzando {len(df_preview)} corsi trovati..."):
             try:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-flash-latest')
                 
-                # Prompt ultra-stretto per evitare errori nei link
                 prompt = f"""
                 Analizza questi corsi e seleziona i 3 migliori per: {query}.
                 DATI: {df_preview[['Titolo_corso', 'Link_scheda', 'Abstract']].to_csv(index=False)}
                 
                 REGOLE:
-                1. Descrivi brevemente perché hai scelto il corso.
-                2. Alla fine scrivi 'LINK_PER_QR:' e sotto elenca i link esatti senza aggiungere punti o testo dopo il link.
-                3. NON abbreviare mai i link con '...'.
+                1. Scrivi un report descrivendo brevemente perché hai scelto ciascun corso.
+                2. Alla fine, vai a capo e scrivi ESATTAMENTE questa stringa: 'TAG_SEGRETO_LINK:'
+                3. Sotto la stringa, elenca i link esatti dei 3 corsi scelti, uno per riga, senza aggiungere altro testo, punti o virgole.
                 """
                 
                 res = model.generate_content(prompt)
@@ -102,40 +103,49 @@ if st.button("🔎 Cerca Corsi", use_container_width=True):
             except Exception as e:
                 st.error(f"Errore IA: {e}")
 
-# --- 6. RISULTATI E PULIZIA QR CODE ---
+# --- 6. RISULTATI: DISPLAY E MULTI-QR CODE ---
 if "risposta_ia" in st.session_state:
     st.markdown("---")
-    st.markdown(st.session_state.risposta_ia)
     
-    # ESTRAZIONE E PULIZIA MANUALE DEI LINK
-    # Cerchiamo tutto ciò che inizia con http e finisce prima di uno spazio o invio
-    raw_links = re.findall(r'https?://scuolafutura[^\s]+', st.session_state.risposta_ia)
+    # Separiamo il testo descrittivo dalla zona dei link (così l'utente non vede i link spiattellati)
+    parti_risposta = st.session_state.risposta_ia.split("TAG_SEGRETO_LINK:")
+    testo_descrittivo = parti_risposta[0]
+    st.markdown(testo_descrittivo)
     
-    clean_links = []
-    for link in raw_links:
-        # Rimuove punteggiatura finale che l'IA potrebbe aver aggiunto (punti, virgole, parentesi)
-        l = link.strip().rstrip('.,;)]!#')
-        if l not in clean_links:
-            clean_links.append(l)
+    # Se la IA ha generato correttamente la seconda parte (i link)
+    if len(parti_risposta) > 1:
+        testo_link = parti_risposta[1]
+        
+        # Estrazione pulita
+        raw_links = re.findall(r'(https?://scuolafutura[^\s\)\>\]\'\"]+)', testo_link)
+        clean_links = []
+        for l in raw_links:
+            pulito = l.strip(".,;!*()[]{}'\"")
+            if pulito not in clean_links:
+                clean_links.append(pulito)
 
-    if clean_links:
-        st.subheader("📱 Link pronti per il tuo smartphone")
-        qr_text = "\n".join(clean_links)
-        
-        qr = qrcode.QRCode(box_size=8, border=2)
-        qr.add_data(qr_text)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        
-        c1, c2 = st.columns([1, 1.5])
-        with c1:
-            st.image(buf.getvalue(), width=250)
-        with c2:
-            st.info("Scansiona per aprire i corsi. Se vedi una pagina vuota, assicurati che il telefono abbia preso il link completo.")
+        # Generazione di UN QR CODE PER OGNI CORSO
+        if clean_links:
+            st.subheader("📱 Accedi alle schede dei corsi")
+            
+            # Creiamo tante colonne quanti sono i link trovati (massimo 3)
+            colonne_qr = st.columns(len(clean_links))
+            
+            for i, link in enumerate(clean_links):
+                with colonne_qr[i]:
+                    # Mostra un link cliccabile pulito
+                    st.markdown(f"**[🔗 Apri Corso {i+1}]({link})**")
+                    
+                    # Genera e mostra il QR Code singolo
+                    qr = qrcode.QRCode(box_size=6, border=2)
+                    qr.add_data(link)
+                    qr.make(fit=True)
+                    img = qr.make_image(fill_color="black", back_color="white")
+                    
+                    buf = BytesIO()
+                    img.save(buf, format="PNG")
+                    st.image(buf.getvalue(), use_container_width=True)
 
-    if st.button("🗑️ Reset"):
+    if st.button("🗑️ Nuova Ricerca"):
         del st.session_state.risposta_ia
         st.rerun()
